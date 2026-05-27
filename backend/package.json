@@ -1,0 +1,27 @@
+{
+  "name": "competitor-scout",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "backend/src/index.js",
+  "scripts": {
+    "start": "cd backend && node src/index.js",
+    "dev": "cd backend && node --watch src/index.js",
+    "kill": "npx kill-port 3001",
+    "fresh": "npx kill-port 3001 && cd backend && node src/index.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.17",
+    "axios": "^1.16.1",
+    "cheerio": "^1.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.0",
+    "exceljs": "^4.4.0",
+    "express": "^4.18.0",
+    "fs-extra": "^11.3.5",
+    "p-limit": "^5.0.0",
+    "puppeteer-core": "^22.0.0"
+  }
+}
