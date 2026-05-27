@@ -2,35 +2,31 @@
  * Bootstrap Updater — Competitor Scout
  *
  * Runs BEFORE the main app starts. Flow:
- *   1. Fetch version.json from GitHub
- *   2. Compare to local version
- *   3. If newer: download release zip, extract, replace files
- *   4. Spawn main app (index.js)
+ *   1. Fetch latest-version.json from GitHub (raw)
+ *   2. Compare to local version in package.json
+ *   3. If newer: download GitHub auto-generated source zip
+ *   4. Extract, copy files over (preserving .env and data)
+ *   5. Launch main app
  *
  * Usage: node updater.js
- * The launcher scripts (launcher.bat / launcher.sh) call this instead of index.js directly.
+ * Called from START.bat before launching the app.
  */
 
 import https from 'https';
 import http from 'http';
-import fs from 'fs';
+import fs, { createWriteStream, existsSync, readFileSync, mkdirSync, rmSync, cpSync } from 'fs';
 import path from 'path';
-import { createWriteStream, existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, cpSync } from 'fs';
 import { execSync, spawn } from 'child_process';
 import { fileURLToPath } from 'url';
-import { createRequire } from 'module';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const require   = createRequire(import.meta.url);
 
-// ── Config — update these to match your GitHub repo ─────────────────────────
-const GITHUB_USER = 'DimitriosMoros';
-const GITHUB_REPO = 'scout-tool-hx';     // ← change this if different
-const VERSION_URL   = `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/version.json`;
-const RELEASES_BASE = `https://github.com/${GITHUB_USER}/${GITHUB_REPO}/releases/download`;
+// ── Config ───────────────────────────────────────────────────────────────────
+const GITHUB_USER    = 'DimitriosMoros';
+const GITHUB_REPO    = 'scout-tool-hx';
+const VERSION_URL    = `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/latest-version.json`;
 
-// ── Files / folders to PRESERVE across updates (user data) ──────────────────
-// These are never overwritten — they contain client-specific config/data.
+// ── Files to PRESERVE across updates (never overwritten) ─────────────────────
 const PRESERVE = [
   'backend/.env',
   'backend/data/competitors.json',
@@ -41,58 +37,68 @@ const PRESERVE = [
 ];
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-function log(msg) { console.log(`[Updater] ${msg}`); }
-function err(msg) { console.error(`[Updater] ✗ ${msg}`); }
+function log(msg)  { console.log(`[Updater] ${msg}`); }
+function warn(msg) { console.warn(`[Updater] ⚠ ${msg}`); }
 
-function fetchJson(url) {
+function fetch(url) {
   return new Promise((resolve, reject) => {
     const get = url.startsWith('https') ? https.get : http.get;
-    get(url, { headers: { 'User-Agent': 'CompetitorScout-Updater' } }, res => {
-      // Follow redirects (GitHub releases redirect to CDN)
-      if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) {
-        return fetchJson(res.headers.location).then(resolve).catch(reject);
+    const req = get(url, { headers: { 'User-Agent': `${GITHUB_REPO}-updater` } }, res => {
+      // Follow redirects — GitHub archive zips redirect to CDN
+      if ([301, 302, 307, 308].includes(res.statusCode)) {
+        return fetch(res.headers.location).then(resolve).catch(reject);
       }
-      if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
-      let data = '';
-      res.on('data', c => data += c);
-      res.on('end', () => {
-        try { resolve(JSON.parse(data)); }
-        catch(e) { reject(new Error(`Invalid JSON from ${url}`)); }
-      });
-    }).on('error', reject);
+      if (res.statusCode !== 200) {
+        return reject(new Error(`HTTP ${res.statusCode} — ${url}`));
+      }
+      const chunks = [];
+      res.on('data', c => chunks.push(c));
+      res.on('end', () => resolve(Buffer.concat(chunks)));
+      res.on('error', reject);
+    });
+    req.on('error', reject);
+    req.setTimeout(10000, () => { req.destroy(); reject(new Error('Request timed out')); });
   });
 }
 
-function downloadFile(url, destPath) {
+async function fetchJson(url) {
+  const buf = await fetch(url);
+  return JSON.parse(buf.toString('utf8'));
+}
+
+async function downloadFile(url, destPath) {
   return new Promise((resolve, reject) => {
     const get = url.startsWith('https') ? https.get : http.get;
-    get(url, { headers: { 'User-Agent': 'CompetitorScout-Updater' } }, res => {
-      if (res.statusCode === 301 || res.statusCode === 302 || res.statusCode === 307) {
+    const req = get(url, { headers: { 'User-Agent': `${GITHUB_REPO}-updater` } }, res => {
+      if ([301, 302, 307, 308].includes(res.statusCode)) {
         return downloadFile(res.headers.location, destPath).then(resolve).catch(reject);
       }
-      if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode}`));
-
+      if (res.statusCode !== 200) {
+        return reject(new Error(`HTTP ${res.statusCode}`));
+      }
       const total = parseInt(res.headers['content-length'] || '0');
       let downloaded = 0;
       const stream = createWriteStream(destPath);
       res.on('data', chunk => {
         downloaded += chunk.length;
         if (total > 0) {
-          const pct = Math.round((downloaded / total) * 100);
-          process.stdout.write(`\r[Updater] Downloading... ${pct}%`);
+          const pct  = Math.round((downloaded / total) * 100);
+          const mb   = (downloaded / 1024 / 1024).toFixed(1);
+          const tmb  = (total / 1024 / 1024).toFixed(1);
+          process.stdout.write(`\r[Updater] Downloading... ${pct}% (${mb}/${tmb} MB)`);
         }
       });
       res.pipe(stream);
       stream.on('finish', () => { process.stdout.write('\n'); resolve(); });
       stream.on('error', reject);
-    }).on('error', reject);
+    });
+    req.on('error', reject);
   });
 }
 
 function compareVersions(a, b) {
-  // Returns: 1 if a > b, -1 if a < b, 0 if equal
-  const pa = a.replace(/^v/, '').split('.').map(Number);
-  const pb = b.replace(/^v/, '').split('.').map(Number);
+  const pa = String(a).replace(/^v/, '').split('.').map(Number);
+  const pb = String(b).replace(/^v/, '').split('.').map(Number);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
     const diff = (pa[i] || 0) - (pb[i] || 0);
     if (diff !== 0) return diff > 0 ? 1 : -1;
@@ -107,174 +113,195 @@ function getLocalVersion() {
   } catch(_) { return '0.0.0'; }
 }
 
-function backupPreservedFiles(tmpDir) {
+function backupPreserved(tmpDir) {
   const backed = {};
   for (const rel of PRESERVE) {
     const src = path.join(__dirname, rel);
     if (existsSync(src)) {
-      const dest = path.join(tmpDir, rel);
+      const dest = path.join(tmpDir, 'preserved', rel);
       mkdirSync(path.dirname(dest), { recursive: true });
       fs.copyFileSync(src, dest);
       backed[rel] = dest;
-      log(`  Preserving ${rel}`);
+      log(`  Preserved: ${rel}`);
     }
   }
   return backed;
 }
 
-function restorePreservedFiles(backed) {
+function restorePreserved(backed) {
   for (const [rel, src] of Object.entries(backed)) {
     const dest = path.join(__dirname, rel);
     mkdirSync(path.dirname(dest), { recursive: true });
     fs.copyFileSync(src, dest);
-    log(`  Restored ${rel}`);
+    log(`  Restored:  ${rel}`);
   }
 }
 
-async function applyUpdate(version) {
-  const zipUrl  = `${RELEASES_BASE}/v${version}/competitor-scout-v${version}.zip`;
+async function applyUpdate(manifest) {
+  const { version, url } = manifest;
   const tmpDir  = path.join(__dirname, '.update-tmp');
-  const zipPath = path.join(tmpDir, 'update.zip');
+  const zipPath = path.join(tmpDir, 'source.zip');
   const extDir  = path.join(tmpDir, 'extracted');
 
-  // Clean / create tmp dir
+  // Clean slate
   if (existsSync(tmpDir)) rmSync(tmpDir, { recursive: true, force: true });
-  mkdirSync(tmpDir, { recursive: true });
   mkdirSync(extDir, { recursive: true });
 
   try {
     // 1. Backup user data
     log('Backing up user data...');
-    const backed = backupPreservedFiles(tmpDir);
+    const backed = backupPreserved(tmpDir);
 
-    // 2. Download zip
-    log(`Downloading v${version} from GitHub Releases...`);
-    await downloadFile(zipUrl, zipPath);
-    log(`Downloaded to ${zipPath}`);
+    // 2. Download the zip
+    log(`Downloading v${version}...`);
+    await downloadFile(url, zipPath);
 
-    // 3. Extract zip (using built-in unzip or PowerShell on Windows)
+    // 3. Extract
     log('Extracting...');
-    try {
-      if (process.platform === 'win32') {
-        execSync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${extDir}' -Force"`, { stdio: 'pipe' });
-      } else {
-        execSync(`unzip -q "${zipPath}" -d "${extDir}"`, { stdio: 'pipe' });
-      }
-    } catch(e) {
-      throw new Error(`Extraction failed: ${e.message}`);
+    if (process.platform === 'win32') {
+      execSync(
+        `powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${extDir}' -Force"`,
+        { stdio: 'pipe' }
+      );
+    } else {
+      execSync(`unzip -q "${zipPath}" -d "${extDir}"`, { stdio: 'pipe' });
     }
 
-    // 4. Find extracted root (zip may contain a top-level folder)
+    // 4. Find the extracted root folder
+    // GitHub auto-zip extracts to: scout-tool-hx-1.0.1/  (repo-name-version)
+    // We need to step into that folder to get the actual files
     const entries = fs.readdirSync(extDir);
     const root = entries.length === 1 && fs.statSync(path.join(extDir, entries[0])).isDirectory()
-      ? path.join(extDir, entries[0])
+      ? path.join(extDir, entries[0])   // step into the auto-named folder
       : extDir;
 
-    // 5. Copy new files over (except node_modules)
-    log('Applying update...');
-    const copyOpts = {
+    log(`Extracted root: ${path.basename(root)}`);
+
+    // 5. Copy new files over — skip node_modules, .env, data, and tmp dir
+    log('Applying new files...');
+    cpSync(root, __dirname, {
       recursive: true,
-      filter: (src) => !src.includes('node_modules') && !src.includes('.update-tmp'),
-    };
-    cpSync(root, __dirname, copyOpts);
+      filter: src => {
+        const rel = path.relative(root, src);
+        if (!rel) return true; // root itself
+        if (rel.startsWith('node_modules'))  return false;
+        if (rel.startsWith('backend/node_modules')) return false;
+        if (rel.startsWith('.update-tmp'))   return false;
+        if (rel === 'backend/.env')          return false;
+        if (rel.startsWith('backend/data/')) return false;
+        return true;
+      },
+    });
 
-    // 6. Restore user data
+    // 6. Restore user data (in case any got clobbered)
     log('Restoring user data...');
-    restorePreservedFiles(backed);
+    restorePreserved(backed);
 
-    // 7. Run npm install in case dependencies changed
-    log('Installing dependencies...');
+    // 7. Update package.json version to match manifest
+    try {
+      const pkgPath = path.join(__dirname, 'package.json');
+      const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+      pkg.version = version;
+      fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+    } catch(_) {}
+
+    // 8. npm install in case dependencies changed
+    log('Checking dependencies...');
     try {
       execSync('npm install --production --no-audit --no-fund', {
         cwd: __dirname,
         stdio: 'pipe',
+        timeout: 60000,
       });
-    } catch(_) {
-      log('npm install warning — continuing anyway');
-    }
+    } catch(_) { warn('npm install had warnings — continuing'); }
 
-    log(`✓ Updated to v${version}`);
+    log(`✓ Successfully updated to v${version}`);
     return true;
+
   } finally {
-    // Always clean up tmp dir
     try { rmSync(tmpDir, { recursive: true, force: true }); } catch(_) {}
   }
 }
 
 function launchApp() {
-  log('Starting Competitor Scout...');
   const mainScript = path.join(__dirname, 'backend', 'src', 'index.js');
+  if (!existsSync(mainScript)) {
+    console.error(`[Updater] Cannot find app at: ${mainScript}`);
+    process.exit(1);
+  }
+  log('Starting Competitor Scout...\n');
   const child = spawn(process.execPath, [mainScript], {
     stdio: 'inherit',
     cwd: __dirname,
     env: { ...process.env },
-    detached: false,
   });
   child.on('exit', code => process.exit(code || 0));
-  child.on('error', e => { err(`Failed to start app: ${e.message}`); process.exit(1); });
+  child.on('error', e => { console.error(`[Updater] Failed to start: ${e.message}`); process.exit(1); });
 }
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
   const localVersion = getLocalVersion();
-  log(`Current version: v${localVersion}`);
 
-  // Check for --skip-update flag (useful for development)
+  console.log('');
+  log(`Current version : v${localVersion}`);
+
   if (process.argv.includes('--skip-update')) {
-    log('Skipping update check (--skip-update)');
+    log('Skipping update check.');
     launchApp();
     return;
   }
 
-  // Check for update with 8-second timeout
+  // Fetch manifest with timeout
   let manifest;
   try {
     const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Timeout')), 8000)
+      setTimeout(() => reject(new Error('timed out after 8s')), 8000)
     );
     manifest = await Promise.race([fetchJson(VERSION_URL), timeout]);
-    log(`Latest version: v${manifest.version}`);
+    log(`Latest version  : v${manifest.version}`);
   } catch(e) {
-    err(`Could not check for updates: ${e.message}`);
-    log('Starting app with current version...');
+    warn(`Could not check for updates (${e.message})`);
+    log('Starting with current version...');
     launchApp();
     return;
   }
 
-  const comparison = compareVersions(manifest.version, localVersion);
-  if (comparison <= 0) {
-    log('Already up to date.');
+  if (compareVersions(manifest.version, localVersion) <= 0) {
+    log('Already up to date.\n');
     launchApp();
     return;
   }
 
   // Update available
-  console.log(`\n  ╔══════════════════════════════════════╗`);
-  console.log(`  ║  Update available: v${manifest.version.padEnd(17)}║`);
-  console.log(`  ║  ${(manifest.notes || 'Bug fixes and improvements').slice(0, 36).padEnd(36)}  ║`);
-  console.log(`  ╚══════════════════════════════════════╝\n`);
+  console.log('');
+  console.log('  ╔══════════════════════════════════════════╗');
+  console.log(`  ║  Update available: v${manifest.version.padEnd(21)}║`);
+  console.log(`  ║  ${(manifest.notes || 'Bug fixes and improvements').slice(0, 40).padEnd(40)}  ║`);
+  console.log('  ╚══════════════════════════════════════════╝');
+  console.log('');
 
   try {
-    const updated = await applyUpdate(manifest.version);
-    if (updated) {
-      log('Restarting with new version...\n');
-      // Spawn a fresh process with the updated code, then exit this one
-      const child = spawn(process.execPath, [fileURLToPath(import.meta.url), '--skip-update'], {
-        stdio: 'inherit',
-        cwd: __dirname,
-        detached: true,
-      });
-      child.unref();
-      process.exit(0);
-    }
+    await applyUpdate(manifest);
+
+    // Relaunch with updated code
+    log('Restarting with updated version...\n');
+    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), '--skip-update'], {
+      stdio: 'inherit',
+      cwd: __dirname,
+      detached: true,
+    });
+    child.unref();
+    process.exit(0);
+
   } catch(e) {
-    err(`Update failed: ${e.message}`);
-    log('Starting app with current version...');
+    warn(`Update failed: ${e.message}`);
+    log('Starting with current version...');
     launchApp();
   }
 }
 
 main().catch(e => {
-  err(`Unexpected error: ${e.message}`);
+  console.error(`[Updater] Fatal: ${e.message}`);
   launchApp();
 });
