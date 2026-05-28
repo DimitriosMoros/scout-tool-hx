@@ -1,0 +1,2598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Competitor Scout — Highside</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<style>
+/* ── Reset & tokens ──────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #F4F6F8;
+  --surface:   #FFFFFF;
+  --surface2:  #F9FAFB;
+  --border:    #E4E7EB;
+  --border2:   #D1D5DB;
+  --text:      #111827;
+  --text2:     #6B7280;
+  --text3:     #9CA3AF;
+  --green:     #059669;
+  --green-bg:  #ECFDF5;
+  --green-b:   #A7F3D0;
+  --amber:     #D97706;
+  --amber-bg:  #FFFBEB;
+  --amber-b:   #FDE68A;
+  --red:       #DC2626;
+  --red-bg:    #FEF2F2;
+  --red-b:     #FECACA;
+  --blue:      #2563EB;
+  --blue-bg:   #EFF6FF;
+  --blue-b:    #BFDBFE;
+  --purple:    #7C3AED;
+  --purple-bg: #F5F3FF;
+  --purple-b:  #DDD6FE;
+  --accent:    #1B5E42;      /* Highside brand — deep moto green */
+  --accent2:   #2E7D5A;
+  --accent-lt: #E8F5EE;
+  --accent-b:  #A7D9BC;
+  --radius:    8px;
+  --radius-lg: 12px;
+  --shadow:    0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+  --shadow-md: 0 4px 6px rgba(0,0,0,.07), 0 2px 4px rgba(0,0,0,.06);
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+/* ── Layout ──────────────────────────────────────────────────────────────── */
+.shell { display: flex; height: 100vh; overflow: hidden; }
+
+/* Sidebar */
+.sidebar {
+  width: 220px; flex-shrink: 0;
+  background: var(--accent);
+  display: flex; flex-direction: column;
+  padding: 0;
+  overflow-y: auto;
+}
+.sidebar-brand {
+  padding: 20px 18px 16px;
+  border-bottom: 1px solid rgba(255,255,255,.12);
+}
+.sidebar-brand .wordmark {
+  font-size: 13px; font-weight: 600; color: #fff; letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.sidebar-brand .sub { font-size: 11px; color: rgba(255,255,255,.55); margin-top: 2px; }
+
+.nav { flex: 1; padding: 12px 0; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 18px; cursor: pointer;
+  color: rgba(255,255,255,.7);
+  font-size: 13.5px; font-weight: 500;
+  transition: background .15s, color .15s;
+  border-radius: 0;
+  border-left: 3px solid transparent;
+}
+.nav-item:hover { background: rgba(255,255,255,.08); color: #fff; }
+.nav-item.active { background: rgba(255,255,255,.13); color: #fff; border-left-color: #fff; }
+.nav-item svg { width: 16px; height: 16px; flex-shrink: 0; }
+
+.sidebar-footer {
+  padding: 14px 18px;
+  border-top: 1px solid rgba(255,255,255,.12);
+  font-size: 11px; color: rgba(255,255,255,.4);
+}
+.shop-pill {
+  display: flex; align-items: center; gap: 7px;
+  background: rgba(255,255,255,.1);
+  border-radius: 6px; padding: 7px 10px;
+  margin-bottom: 8px;
+}
+.shop-dot { width: 7px; height: 7px; border-radius: 50%; background: #34D399; flex-shrink: 0; }
+.shop-name { font-size: 12px; color: rgba(255,255,255,.8); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Main */
+.main { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+
+.topbar {
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 0 28px; height: 56px;
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.topbar-title { font-size: 16px; font-weight: 600; }
+.topbar-actions { display: flex; gap: 10px; align-items: center; }
+
+.content { flex: 1; overflow-y: auto; padding: 28px; }
+
+/* Pages */
+.page { display: none; }
+.page.active { display: block; }
+
+/* ── Typography ──────────────────────────────────────────────────────────── */
+.page-header { margin-bottom: 24px; }
+.page-header h2 { font-size: 20px; font-weight: 600; }
+.page-header p  { color: var(--text2); margin-top: 4px; font-size: 13.5px; }
+
+/* ── Cards ───────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+.card-body { padding: 22px 24px; }
+.card-header {
+  padding: 16px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.card-header h3 { font-size: 14px; font-weight: 600; }
+
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.btn {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 8px 16px; border-radius: var(--radius);
+  font-family: inherit; font-size: 13.5px; font-weight: 500;
+  border: 1px solid transparent; cursor: pointer;
+  transition: all .15s; white-space: nowrap;
+  text-decoration: none;
+}
+.btn:disabled { opacity: .45; cursor: not-allowed; }
+.btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+
+.btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.btn-primary:hover:not(:disabled) { background: var(--accent2); }
+
+.btn-secondary { background: var(--surface); color: var(--text); border-color: var(--border2); }
+.btn-secondary:hover:not(:disabled) { background: var(--surface2); border-color: #aaa; }
+
+.btn-danger { background: var(--red-bg); color: var(--red); border-color: var(--red-b); }
+.btn-danger:hover:not(:disabled) { background: #fee2e2; }
+
+.btn-ghost { background: transparent; color: var(--text2); border-color: transparent; }
+.btn-ghost:hover:not(:disabled) { background: var(--surface2); color: var(--text); }
+
+.btn-sm { padding: 5px 11px; font-size: 12.5px; }
+.btn-lg { padding: 11px 22px; font-size: 15px; }
+
+/* ── Form elements ───────────────────────────────────────────────────────── */
+.field { margin-bottom: 16px; }
+.field label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; color: var(--text); }
+.field .hint { font-size: 12px; color: var(--text2); margin-top: 4px; }
+
+input[type=text], input[type=url], input[type=email], select, textarea {
+  width: 100%; padding: 8px 12px;
+  border: 1px solid var(--border2); border-radius: var(--radius);
+  font-family: inherit; font-size: 13.5px; color: var(--text);
+  background: var(--surface);
+  transition: border-color .15s, box-shadow .15s;
+  outline: none;
+}
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 3px rgba(27,94,66,.12);
+}
+textarea { resize: vertical; min-height: 80px; }
+
+/* Tags input */
+.tags-input-wrap {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  border: 1px solid var(--border2); border-radius: var(--radius);
+  padding: 6px 10px; background: var(--surface); min-height: 40px;
+  cursor: text;
+}
+.tags-input-wrap:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(27,94,66,.12); }
+.tag-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--accent-lt); color: var(--accent);
+  border: 1px solid var(--accent-b); border-radius: 4px;
+  padding: 2px 8px; font-size: 12.5px; font-weight: 500;
+}
+.tag-chip button { background: none; border: none; cursor: pointer; color: var(--accent); padding: 0; line-height: 1; font-size: 14px; }
+.tags-input-wrap input {
+  border: none; box-shadow: none; padding: 2px 0; min-width: 120px; flex: 1;
+  font-size: 13px;
+}
+.tags-input-wrap input:focus { box-shadow: none; border: none; }
+
+/* ── Badges ──────────────────────────────────────────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 20px;
+  font-size: 11.5px; font-weight: 500;
+}
+.badge-green  { background: var(--green-bg);  color: var(--green);  border: 1px solid var(--green-b); }
+.badge-amber  { background: var(--amber-bg);  color: var(--amber);  border: 1px solid var(--amber-b); }
+.badge-red    { background: var(--red-bg);    color: var(--red);    border: 1px solid var(--red-b); }
+.badge-blue   { background: var(--blue-bg);   color: var(--blue);   border: 1px solid var(--blue-b); }
+.badge-purple { background: var(--purple-bg); color: var(--purple); border: 1px solid var(--purple-b); }
+.badge-neutral { background: var(--surface2); color: var(--text2);  border: 1px solid var(--border); }
+
+/* ── Tables ──────────────────────────────────────────────────────────────── */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th {
+  text-align: left; padding: 10px 16px;
+  background: var(--surface2); border-bottom: 1px solid var(--border);
+  font-size: 12px; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: .05em;
+  white-space: nowrap;
+}
+td {
+  padding: 12px 16px; border-bottom: 1px solid var(--border);
+  font-size: 13.5px; vertical-align: middle;
+}
+tr:last-child td { border-bottom: none; }
+tr:hover td { background: var(--surface2); }
+
+/* ── Grid ────────────────────────────────────────────────────────────────── */
+.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+
+/* ── Stat cards ──────────────────────────────────────────────────────────── */
+.stat-card { padding: 20px 22px; }
+.stat-card .stat-val { font-size: 28px; font-weight: 600; line-height: 1; }
+.stat-card .stat-lbl { font-size: 12.5px; color: var(--text2); margin-top: 5px; }
+.stat-card .stat-sub { font-size: 12px; color: var(--text3); margin-top: 2px; }
+
+/* ── Progress bar ────────────────────────────────────────────────────────── */
+.progress-wrap { background: var(--border); border-radius: 99px; height: 6px; overflow: hidden; }
+.progress-bar  { height: 100%; background: var(--accent); border-radius: 99px; transition: width .5s ease; }
+
+/* ── Product cards (results grid) ────────────────────────────────────────── */
+.products-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+
+.product-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: box-shadow .2s, border-color .2s;
+  position: relative;
+}
+.product-card:hover { box-shadow: var(--shadow-md); border-color: var(--border2); }
+.product-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(27,94,66,.2); }
+
+.product-card-check {
+  position: absolute; top: 10px; left: 10px; z-index: 2;
+  width: 20px; height: 20px;
+  background: var(--surface); border: 2px solid var(--border2);
+  border-radius: 4px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all .15s;
+}
+.product-card.selected .product-card-check {
+  background: var(--accent); border-color: var(--accent);
+}
+.product-card.selected .product-card-check::after {
+  content: ''; display: block;
+  width: 5px; height: 9px;
+  border: 2px solid #fff; border-top: none; border-left: none;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+.product-card-img {
+  width: 100%; height: 160px; object-fit: cover;
+  background: var(--surface2);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--text3); font-size: 32px;
+}
+.product-card-img img { width: 100%; height: 160px; object-fit: cover; display: block; }
+
+.product-card-body { padding: 14px; }
+.product-card-brand { font-size: 11px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: .06em; }
+.product-card-title { font-size: 13.5px; font-weight: 500; margin: 4px 0 8px; line-height: 1.3; }
+.product-card-price { font-size: 15px; font-weight: 600; }
+.product-card-type  { font-size: 11.5px; color: var(--text2); margin-top: 4px; }
+.product-card-tags  { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 4px; }
+.product-card-tag   { font-size: 10.5px; background: var(--accent-lt); color: var(--accent); border-radius: 3px; padding: 1px 6px; border: 1px solid var(--accent-b); }
+
+/* ── Modal ───────────────────────────────────────────────────────────────── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.4);
+  display: flex; align-items: center; justify-content: center; z-index: 100;
+  padding: 20px; opacity: 0; pointer-events: none; transition: opacity .2s;
+}
+.modal-overlay.open { opacity: 1; pointer-events: all; }
+.modal {
+  background: var(--surface); border-radius: var(--radius-lg);
+  box-shadow: 0 20px 60px rgba(0,0,0,.2);
+  max-width: 520px; width: 100%;
+  transform: translateY(12px); transition: transform .2s;
+  max-height: 90vh; display: flex; flex-direction: column;
+}
+.modal-overlay.open .modal { transform: translateY(0); }
+.modal-header {
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.modal-header h3 { font-size: 16px; font-weight: 600; }
+.modal-body { padding: 22px 24px; overflow-y: auto; }
+.modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  display: flex; gap: 10px; justify-content: flex-end; flex-shrink: 0;
+}
+
+/* ── Empty states ────────────────────────────────────────────────────────── */
+.empty {
+  text-align: center; padding: 56px 24px;
+  color: var(--text2);
+}
+.empty .icon { font-size: 40px; margin-bottom: 14px; }
+.empty h3 { font-size: 16px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+.empty p  { font-size: 13.5px; max-width: 340px; margin: 0 auto 20px; }
+
+/* ── Alert banners ───────────────────────────────────────────────────────── */
+.alert {
+  padding: 12px 16px; border-radius: var(--radius);
+  font-size: 13.5px; display: flex; align-items: flex-start; gap: 10px;
+  margin-bottom: 16px;
+}
+.alert svg { width: 16px; height: 16px; flex-shrink: 0; margin-top: 1px; }
+.alert-error  { background: var(--red-bg);   border: 1px solid var(--red-b);   color: var(--red); }
+.alert-success { background: var(--green-bg); border: 1px solid var(--green-b); color: var(--green); }
+.alert-info   { background: var(--blue-bg);  border: 1px solid var(--blue-b);  color: var(--blue); }
+.alert-warning { background: var(--amber-bg); border: 1px solid var(--amber-b); color: var(--amber); }
+
+/* ── Scrape progress UI ──────────────────────────────────────────────────── */
+.scrape-progress {
+  border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 28px 32px; background: var(--surface);
+  text-align: center;
+}
+.scrape-progress .sp-icon { font-size: 36px; margin-bottom: 14px; }
+.scrape-progress .sp-title { font-size: 18px; font-weight: 600; margin-bottom: 6px; }
+.scrape-progress .sp-msg   { font-size: 13.5px; color: var(--text2); margin-bottom: 20px; min-height: 20px; }
+.scrape-progress .sp-bar-wrap { max-width: 400px; margin: 0 auto 10px; }
+.scrape-progress .sp-pct { font-size: 12px; color: var(--text3); font-family: 'DM Mono', monospace; }
+
+/* ── Results top bar ─────────────────────────────────────────────────────── */
+.results-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.results-bar .spacer { flex: 1; }
+.select-all-bar {
+  background: var(--accent); color: #fff;
+  padding: 10px 20px; border-radius: var(--radius);
+  display: flex; align-items: center; gap: 14px;
+  margin-bottom: 16px;
+}
+.select-all-bar span { font-size: 13.5px; font-weight: 500; }
+
+/* ── Filter tabs ─────────────────────────────────────────────────────────── */
+.filter-tabs {
+  display: flex; gap: 4px;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 4px;
+}
+.filter-tab {
+  padding: 6px 14px; border-radius: 6px; cursor: pointer;
+  font-size: 13px; font-weight: 500; color: var(--text2);
+  transition: all .15s; border: none; background: transparent; font-family: inherit;
+}
+.filter-tab.active { background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+
+/* ── Summary brand rows ──────────────────────────────────────────────────── */
+.brand-row {
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 0; border-bottom: 1px solid var(--border);
+}
+.brand-row:last-child { border-bottom: none; }
+.brand-name { font-weight: 600; min-width: 120px; }
+.brand-bars { flex: 1; display: flex; gap: 6px; align-items: center; }
+.mini-bar-wrap { flex: 1; }
+.mini-bar { height: 6px; border-radius: 99px; }
+.brand-nums { display: flex; gap: 16px; font-size: 12.5px; min-width: 140px; }
+
+/* ── Animations ──────────────────────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
+.spin { animation: spin 1s linear infinite; }
+.pulse { animation: pulse 1.8s ease-in-out infinite; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.fade-in { animation: fadeIn .25s ease forwards; }
+
+/* ── Product Card Draft Badge ────────────────────────────────────────────── */
+.product-card { position: relative; }
+.product-card.draft { opacity: 0.7; }
+.draft-badge {
+  position: absolute; top: 8px; right: 36px; z-index: 10;
+  background: var(--accent); color: #fff;
+  padding: 4px 8px; border-radius: 4px;
+  font-size: 11px; font-weight: 600;
+  pointer-events: none;
+}
+.product-card-delete {
+  position: absolute; top: 8px; right: 8px; z-index: 12;
+  width: 24px; height: 24px; border-radius: 50%;
+  background: rgba(220,38,38,.85); color: #fff;
+  border: none; cursor: pointer;
+  display: none; align-items: center; justify-content: center;
+  transition: background .15s, transform .15s; padding: 0;
+}
+.product-card-delete:hover { background: var(--red); transform: scale(1.1); }
+.product-card:hover .product-card-delete,
+.product-card.selected .product-card-delete { display: flex; }
+.product-card-img { position: relative; }
+.img-arrow {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(0,0,0,.45); color: #fff;
+  border: none; cursor: pointer; display: none;
+  align-items: center; justify-content: center;
+  font-size: 13px; z-index: 5; padding: 0; transition: background .15s;
+}
+.img-arrow:hover { background: rgba(0,0,0,.7); }
+.img-arrow.prev { left: 6px; }
+.img-arrow.next { right: 6px; }
+.product-card:hover .img-arrow { display: flex; }
+.img-dots { position: absolute; bottom: 5px; left: 50%; transform: translateX(-50%); display: none; gap: 4px; }
+.product-card:hover .img-dots { display: flex; }
+.img-dot { width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,.5); transition: background .15s; }
+.img-dot.active { background: #fff; }
+.select-all-bar .btn-danger { background: rgba(220,38,38,.2); color: #fca5a5; border-color: rgba(220,38,38,.4); }
+.select-all-bar .btn-danger:hover { background: rgba(220,38,38,.4); }
+
+/* ── Checkbox Label ──────────────────────────────────────────────────────── */
+.checkbox-label {
+  display: flex; align-items: center; gap: 10px;
+  cursor: pointer; font-weight: normal;
+}
+.checkbox-label input[type="checkbox"] {
+  width: 18px; height: 18px; cursor: pointer;
+}
+
+/* ── Toast ───────────────────────────────────────────────────────────────── */
+#toast {
+  position: fixed; bottom: 24px; right: 24px; z-index: 999;
+  background: #1a1a2e; color: #fff;
+  padding: 12px 18px; border-radius: var(--radius);
+  font-size: 13.5px; box-shadow: 0 8px 24px rgba(0,0,0,.25);
+  transform: translateY(20px); opacity: 0;
+  transition: all .25s; pointer-events: none;
+  max-width: 360px;
+}
+#toast.show { transform: none; opacity: 1; }
+
+/* ── Dividers & utils ────────────────────────────────────────────────────── */
+.divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+.mono { font-family: 'DM Mono', monospace; font-size: 12.5px; }
+.text-muted { color: var(--text2); }
+.text-sm { font-size: 12.5px; }
+.mt-4 { margin-top: 16px; }
+.mb-4 { margin-bottom: 16px; }
+.gap-2 { gap: 8px; }
+.flex { display: flex; align-items: center; }
+.flex-col { display: flex; flex-direction: column; }
+.w-full { width: 100%; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <!-- ── Sidebar ── -->
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <div class="wordmark">Competitor Scout</div>
+      <div class="sub">by Highside</div>
+    </div>
+
+    <div class="nav">
+      <div class="nav-item active" onclick="goto('dashboard')" id="nav-dashboard">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+        Dashboard
+      </div>
+      <div class="nav-item" onclick="goto('competitors')" id="nav-competitors">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+        Competitors
+      </div>
+      <div class="nav-item" onclick="goto('scan')" id="nav-scan">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        Run Scan
+      </div>
+      <div class="nav-item" onclick="goto('results')" id="nav-results">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 17H7A5 5 0 017 7h2M15 7h2a5 5 0 010 10h-2M8 12h8"/></svg>
+        Gap Results
+      </div>
+      <div class="nav-item" onclick="goto('history')" id="nav-history">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Scan History
+      </div>
+      <div class="nav-item" onclick="goto('watchlist')" id="nav-watchlist">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4M12 16h.01"/></svg>
+        Watchlist
+        <span id="watchlistBadge" style="display:none;background:var(--amber);color:#fff;border-radius:99px;font-size:10px;font-weight:700;padding:1px 6px;margin-left:auto"></span>
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="shop-pill">
+        <span class="shop-dot"></span>
+        <span class="shop-name" id="shopName">Loading…</span>
+      </div>
+      <div>Competitor Scout v1.0</div>
+    </div>
+  </nav>
+
+  <!-- ── Main ── -->
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title" id="pageTitle">Dashboard</div>
+      <div class="topbar-actions" id="topbarActions">
+        <button class="btn btn-ghost btn-sm" onclick="shutdownApp()" title="Stop the server and close" style="color:var(--text2)">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
+          Shut down
+        </button>
+      </div>
+    </div>
+
+    <div class="content">
+
+      <!-- ════════════════ DASHBOARD ════════════════ -->
+      <div class="page active" id="page-dashboard">
+        <div class="page-header">
+          <h2>Overview</h2>
+          <p>Your store vs competitor gap analysis at a glance.</p>
+        </div>
+
+        <div class="grid-4 mb-4" id="dashStats">
+          <div class="card stat-card">
+            <div class="stat-val" id="ds-competitors">—</div>
+            <div class="stat-lbl">Competitors tracked</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-val" id="ds-host-products">—</div>
+            <div class="stat-lbl">Your products (last scan vendor)</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-val" id="ds-missing" style="color:var(--red)">—</div>
+            <div class="stat-lbl">Missing products</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-val" id="ds-drafts" style="color:var(--amber)">—</div>
+            <div class="stat-lbl">Draft products created</div>
+          </div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-header"><h3>Quick actions</h3></div>
+            <div class="card-body flex-col" style="gap:10px">
+              <button class="btn btn-primary btn-lg w-full" onclick="goto('scan')">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                Run new scan
+              </button>
+              <button class="btn btn-secondary w-full" onclick="goto('competitors')">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                Add competitor
+              </button>
+              <button class="btn btn-secondary w-full" onclick="goto('results')" id="dash-view-results" style="display:none">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9 17H7A5 5 0 017 7h2M15 7h2a5 5 0 010 10h-2M8 12h8"/></svg>
+                View last results
+              </button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header"><h3>Recent scans</h3></div>
+            <div class="card-body" id="recentScans">
+              <div class="empty" style="padding:24px 0">
+                <div class="icon">📋</div>
+                <p>No scans run yet. Run your first scan to see results here.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════════════ COMPETITORS ════════════════ -->
+      <div class="page" id="page-competitors">
+        <div class="page-header">
+          <h2>Competitor sites</h2>
+          <p>Add the websites you want to monitor. We support Shopify stores and regular websites.</p>
+        </div>
+
+        <div class="card mb-4">
+          <div class="card-header">
+            <h3>Add competitor</h3>
+          </div>
+          <div class="card-body">
+            <div class="grid-2">
+              <div class="field">
+                <label>Competitor name</label>
+                <input type="text" id="comp-name" placeholder="e.g. AMX Superstores"/>
+              </div>
+              <div class="field">
+                <label>Website URL</label>
+                <input type="url" id="comp-url" placeholder="https://www.amxsuperstores.com.au"/>
+              </div>
+            </div>
+            <div class="field">
+              <label>Brand filter <span class="text-muted text-sm">(optional — only scrape these brands)</span></label>
+              <input type="text" id="brandFilterInput" placeholder="e.g. Shoei, Dainese, HJC — leave empty for all brands"/>
+              <div class="hint">Enter brand names separated by commas</div>
+            </div>
+            <button class="btn btn-primary" onclick="addCompetitor()">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              Add competitor
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header"><h3>Tracked competitors</h3></div>
+          <div id="competitorsList">
+            <div class="empty"><div class="icon">🌐</div><h3>No competitors yet</h3><p>Add your first competitor above to start tracking gaps.</p></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════════════ SCAN ════════════════ -->
+      <div class="page" id="page-scan">
+        <div class="page-header">
+          <h2>Run scan</h2>
+          <p>Choose a competitor and we'll compare their catalogue against your store.</p>
+        </div>
+
+        <!-- Scan config (shown when not running) -->
+        <div id="scanConfig">
+          <div class="card mb-4">
+            <div class="card-header"><h3>Scan settings</h3></div>
+            <div class="card-body">
+              <div class="field">
+                <label>Competitor to scan</label>
+                <select id="scan-competitor">
+                  <option value="">— select a competitor —</option>
+                </select>
+              </div>
+
+              <div class="field">
+                <label>Override brand filter <span class="text-muted text-sm">(optional)</span></label>
+                <div class="tags-input-wrap" id="scanBrandTagsWrap">
+                  <input type="text" id="scanBrandTagInput" placeholder="Add brands or leave blank to use competitor default…"/>
+                </div>
+              </div>
+
+              <div class="field">
+                <label class="checkbox-label">
+                  <input type="checkbox" id="useCacheCheckbox" checked/>
+                  <span>Use cached data if available (faster, saves credits)</span>
+                </label>
+                <div class="hint">If unchecked, will always scrape fresh data</div>
+              </div>
+
+              <div class="grid-2" style="gap:16px;margin-bottom:16px">
+                <div class="field" style="margin-bottom:0">
+                  <label>Max products to scrape</label>
+                  <input type="number" id="maxProductsInput" value="20" min="1" max="250"/>
+                  <div class="hint">Each product takes ~30–60s with Puppeteer</div>
+                </div>
+                <div class="field" style="margin-bottom:0">
+                  <label>Max pages per collection</label>
+                  <input type="number" id="maxPagesInput" value="5" min="1" max="20"/>
+                  <div class="hint">Collection pages to crawl for product URLs</div>
+                </div>
+              </div>
+
+              <!-- Vendor quick-select — loads your Shopify vendors for this competitor -->
+              <div class="field" id="vendorPickerWrap" style="display:none">
+                <label>Quick-select vendor <span class="text-muted text-sm">(loads from your Shopify store)</span></label>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                  <select id="vendorPicker" onchange="addVendorFromPicker()" style="width:auto;flex:1">
+                    <option value="">— pick a vendor to add —</option>
+                  </select>
+                  <button class="btn btn-secondary btn-sm" onclick="loadVendors()" id="loadVendorsBtn">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                    Load vendors
+                  </button>
+                </div>
+                <div class="hint">Select a vendor to add it to the brand filter above</div>
+              </div>
+
+              <div id="scanCompetitorPreview" style="display:none" class="alert alert-info mb-4">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                <span id="scanPreviewText"></span>
+              </div>
+
+              <button class="btn btn-primary btn-lg" onclick="startScan()" id="startScanBtn">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                Start scan
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Progress (shown while running) -->
+        <div id="scanProgress" style="display:none">
+          <div class="scrape-progress fade-in">
+            <div class="sp-icon" id="spIcon">🔍</div>
+            <div class="sp-title" id="spTitle">Scanning…</div>
+            <div class="sp-msg" id="spMsg">Initialising…</div>
+            <div class="sp-bar-wrap">
+              <div class="progress-wrap">
+                <div class="progress-bar" id="spBar" style="width:0%"></div>
+              </div>
+            </div>
+            <div class="sp-pct" id="spPct">0%</div>
+            <div style="margin-top:20px">
+              <button class="btn btn-danger btn-sm" id="cancelScanBtn" onclick="cancelScan()" style="opacity:.85">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+                Stop scan &amp; show collected results
+              </button>
+            </div>
+
+            <!-- Live terminal feed -->
+            <div class="terminal-header">
+              <span><span class="terminal-dot" id="termDot"></span>Live output</span>
+              <button class="btn btn-ghost btn-sm" onclick="clearTerminal()" style="font-size:11px;padding:2px 8px">Clear</button>
+            </div>
+            <div class="live-terminal" id="liveTerminal">Waiting for scan to start…</div>
+          </div>
+        </div>
+
+        <!-- Done summary (shown after) -->
+        <div id="scanDone" style="display:none" class="fade-in">
+          <div class="alert alert-success mb-4" id="scanDoneAlert">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            <span id="scanDoneMsg"></span>
+          </div>
+          <div class="grid-3 mb-4" id="scanSummaryCards"></div>
+          <button class="btn btn-primary btn-lg" onclick="goto('results')">
+            View gap results →
+          </button>
+          <button class="btn btn-secondary btn-lg" onclick="resetScan()" style="margin-left:10px">
+            Run another scan
+          </button>
+        </div>
+      </div>
+
+      <!-- ════════════════ RESULTS ════════════════ -->
+      <div class="page" id="page-results">
+        <div id="resultsEmpty" class="empty">
+          <div class="icon">🔍</div>
+          <h3>No results yet</h3>
+          <p>Run a scan to compare your store against a competitor.</p>
+          <button class="btn btn-primary" onclick="goto('scan')">Run first scan</button>
+        </div>
+
+        <div id="resultsContent" style="display:none">
+          <!-- History banner — shown when viewing a past scan -->
+          <div id="historyBanner" style="display:none;margin-bottom:16px;background:var(--blue-bg);border:1px solid var(--blue-b);border-radius:var(--radius);padding:10px 16px;align-items:center;gap:12px;">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;color:var(--blue);flex-shrink:0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            <span id="historyBannerText" style="font-size:13.5px;color:var(--blue);flex:1"></span>
+            <button class="btn btn-sm" onclick="closeHistoryScan()" style="background:var(--blue);color:#fff;border:none;gap:6px;flex-shrink:0">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M18 6L6 18M6 6l12 12"/></svg>
+              Close scan
+            </button>
+          </div>
+
+          <!-- Brand summary -->
+          <div class="card mb-4" id="brandSummaryCard">
+            <div class="card-header">
+              <h3>Brand breakdown</h3>
+              <span id="resultsMeta" class="text-sm text-muted"></span>
+            </div>
+            <div class="card-body" id="brandSummaryBody"></div>
+          </div>
+
+          <!-- Actions + filters -->
+          <div class="results-bar">
+            <div class="filter-tabs">
+              <button class="filter-tab active" onclick="filterResults('missing')" id="tab-missing">Missing</button>
+              <button class="filter-tab" onclick="filterResults('matched')" id="tab-matched">Already stocked</button>
+              <button class="filter-tab" onclick="filterResults('variantgap')" id="tab-variantgap" style="display:none">
+                Missing sizes <span id="variantGapCount" style="background:var(--amber);color:#fff;border-radius:99px;font-size:10px;font-weight:700;padding:1px 6px;margin-left:4px;display:none">0</span>
+              </button>
+            </div>
+            <div class="spacer"></div>
+            <button class="btn btn-ghost btn-sm" onclick="recheckAgainstShopify()" id="recheckBtn" title="Re-check your Shopify store — moves products you've added to Already Stocked">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+              Refresh
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="selectAll()">Select all</button>
+            <button class="btn btn-secondary btn-sm" onclick="selectNone()">Deselect all</button>
+            <select id="filterBrand" onchange="applyFilters()" style="width:auto; padding:6px 10px; font-size:13px">
+              <option value="">All brands</option>
+            </select>
+            <select id="filterType" onchange="applyFilters()" style="width:auto; padding:6px 10px; font-size:13px">
+              <option value="">All types</option>
+            </select>
+          </div>
+
+          <!-- Selection action bar -->
+          <div id="selectionBar" class="select-all-bar" style="display:none">
+            <span id="selectionCount">0 selected</span>
+            <div style="flex:1"></div>
+            <button class="btn btn-secondary btn-sm" onclick="createDrafts()">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              Create products in Shopify
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="exportExcel()">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 3v13M5 14l7 7 7-7"/><path d="M5 21h14"/></svg>
+              Export to Excel
+            </button>
+            <button class="btn btn-danger btn-sm" onclick="deleteSelected()">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+              Delete selected
+            </button>
+          </div>
+
+          <div id="createDraftsProgress" class="alert alert-info" style="display:none">
+            <svg class="spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+            <span id="createDraftsMsg">Creating draft products…</span>
+          </div>
+
+          <!-- Product grid -->
+          <div class="products-grid" id="productsGrid"></div>
+
+          <!-- Export all footer -->
+          <div style="margin-top:24px; display:flex; gap:12px; flex-wrap:wrap; align-items:center" id="exportAllRow">
+            <button class="btn btn-secondary" onclick="exportExcel(true)">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 3v13M5 14l7 7 7-7"/><path d="M5 21h14"/></svg>
+              Export all missing to Excel
+            </button>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- ════════════════ WATCHLIST ════════════════ -->
+      <div class="page" id="page-watchlist">
+        <div class="page-header">
+          <h2>Watchlist — Partial Stock</h2>
+          <p>Products where some size variants are unavailable. Select products to rescrape or upload available sizes to Shopify.</p>
+        </div>
+
+        <!-- Top action bar -->
+        <div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+          <button class="btn btn-secondary btn-sm" onclick="watchlistSelectAll()">Select all</button>
+          <button class="btn btn-ghost btn-sm" onclick="watchlistSelectNone()">Deselect all</button>
+          <span class="text-sm text-muted" id="watchlistMeta" style="flex:1"></span>
+          <button class="btn btn-secondary btn-sm" onclick="downloadWatchlist()" title="Download watchlist as JSON">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M12 3v13M5 14l7 7 7-7"/><path d="M5 21h14"/></svg>
+            Download
+          </button>
+          <button class="btn btn-danger btn-sm" onclick="clearWatchlist()">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+            Clear all
+          </button>
+        </div>
+
+        <!-- Selection action bar (shows when items selected) -->
+        <div id="watchlistSelBar" class="select-all-bar" style="display:none;margin-bottom:16px">
+          <span id="watchlistSelCount">0 selected</span>
+          <div style="flex:1"></div>
+          <button class="btn btn-secondary btn-sm" onclick="rescrapeSelected()" id="rescrapeBtn">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            Rescrape selected for missing variants
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="uploadSelectedWatchlist()">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M12 5v14M5 12h14"/></svg>
+            Upload available sizes to Shopify
+          </button>
+          <button class="btn btn-danger btn-sm" onclick="removeSelectedWatchlist()">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            Remove selected
+          </button>
+        </div>
+
+        <!-- Rescrape progress (shown while rescraping) -->
+        <div id="watchlistRescrapeProgress" style="display:none" class="alert alert-info mb-4">
+          <svg class="spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+          <span id="watchlistRescrapeMsg">Rescraping products…</span>
+        </div>
+
+        <div id="watchlistEmpty" class="empty" style="display:none">
+          <div class="icon">✅</div>
+          <h3>Watchlist is empty</h3>
+          <p>Products with unavailable variants will appear here automatically after each scan.</p>
+        </div>
+        <div id="watchlistContent"></div>
+      </div>
+
+      <!-- ════════════════ SCAN HISTORY ════════════════ -->
+      <div class="page" id="page-history">
+        <div class="page-header">
+          <h2>Scan History</h2>
+          <p>All previous gap analysis scans. Load any scan to view results and create Shopify drafts.</p>
+        </div>
+        <div id="historyEmpty" class="empty" style="display:none">
+          <div class="icon">🕐</div>
+          <h3>No scan history yet</h3>
+          <p>Run your first scan and it will be saved here automatically.</p>
+          <button class="btn btn-primary" onclick="goto('scan')">Run first scan</button>
+        </div>
+        <div id="historyList"></div>
+      </div>
+
+    </div><!-- /content -->
+  </div><!-- /main -->
+</div><!-- /shell -->
+
+<!-- ── Add competitor confirm modal ── -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3 id="modal-title">Modal</h3>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer"></div>
+  </div>
+</div>
+
+<!-- ── Toast ── -->
+<div id="toast"></div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════════════════════════
+const API = ''; // same origin
+const S = {
+  competitors: [],
+  currentJob: null,
+  lastResult: null,
+  shopInfo: null,
+  hostProductCount: 0,
+  currentScanId:    null,
+  draftCount: 0,
+  pollTimer: null,
+  selectedProducts: new Set(),
+  activeTab: 'missing',
+  brandFilter: '',
+  typeFilter: '',
+  scanBrands: [],
+  addBrands: [],
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// NAV
+// ═══════════════════════════════════════════════════════════════════
+const PAGE_TITLES = {
+  dashboard:   'Dashboard',
+  competitors: 'Competitors',
+  scan:        'Run Scan',
+  results:     'Gap Results',
+  history:     'Scan History',
+  watchlist:   'Watchlist — Partial Stock',
+};
+
+function goto(page) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById(`page-${page}`)?.classList.add('active');
+  document.getElementById(`nav-${page}`)?.classList.add('active');
+  document.getElementById('pageTitle').textContent = PAGE_TITLES[page] || page;
+  document.getElementById('topbarActions').innerHTML = '';
+
+  if (page === 'scan') refreshScanCompetitorSelect();
+  if (page === 'competitors') renderCompetitors();
+  if (page === 'dashboard') refreshDashboard();
+  if (page === 'results') renderResults();
+  if (page === 'history') loadAndRenderHistory();
+  if (page === 'watchlist') renderWatchlist();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// API HELPERS
+// ═══════════════════════════════════════════════════════════════════
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(`${API}${path}`, opts);
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({ error: r.statusText }));
+    throw new Error(e.error || r.statusText);
+  }
+  return r.json();
+}
+
+async function apiDownload(path, body, filename) {
+  const r = await fetch(`${API}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error('Export failed');
+  const blob = await r.blob();
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = filename;
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════════════════════════
+async function init() {
+  try {
+    const shop = await api('GET', '/api/shop');
+    S.shopInfo = shop;
+    document.getElementById('shopName').textContent = shop.name || shop.domain || 'Connected';
+  } catch(e) {
+    document.getElementById('shopName').textContent = 'Shop connected';
+  }
+
+  try {
+    S.competitors = await api('GET', '/api/competitors');
+  } catch(e) {}
+
+  // Host product count is NOT loaded on startup (store may have 250k+ products).
+  // It updates after each scan based on the vendor-targeted fetch.
+  refreshDashboard();
+  setupTagInputs();
+  loadAndRenderHistory();
+  getWatchlist().then(updateWatchlistBadge); // load and show badge
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DASHBOARD
+// ═══════════════════════════════════════════════════════════════════
+function refreshDashboard() {
+  document.getElementById('ds-competitors').textContent = S.competitors.length;
+  document.getElementById('ds-host-products').textContent = S.hostProductCount.toLocaleString();
+  document.getElementById('ds-missing').textContent = S.lastResult ? S.lastResult.missing.length : '—';
+  document.getElementById('ds-drafts').textContent = S.draftCount || '—';
+
+  if (S.lastResult) {
+    document.getElementById('dash-view-results').style.display = '';
+  }
+  refreshDashboardRecentScans();
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// COMPETITORS
+// ═══════════════════════════════════════════════════════════════════
+function renderCompetitors() {
+  const el = document.getElementById('competitorsList');
+  if (!S.competitors.length) {
+    el.innerHTML = `<div class="empty"><div class="icon">🌐</div><h3>No competitors yet</h3><p>Add your first competitor above to start tracking gaps.</p></div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Name</th><th>URL</th><th>Brands</th><th>Actions</th>
+        </tr></thead>
+        <tbody id="competitorsTbody"></tbody>
+      </table>
+    </div>`;
+
+  const tbody = document.getElementById('competitorsTbody');
+  S.competitors.forEach(c => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${esc(c.name)}</strong></td>
+      <td><a href="${esc(c.url)}" target="_blank" class="text-sm mono" style="color:var(--blue)">${esc(c.url)}</a></td>
+      <td>${c.brands?.length ? c.brands.map(b => `<span class="badge badge-neutral">${esc(b)}</span>`).join(' ') : '<span class="text-muted text-sm">All brands</span>'}</td>
+      <td style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-secondary btn-sm" onclick="scanCompetitor('${c.id}')">Scan now</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteCompetitor('${c.id}')">Remove</button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+async function addCompetitor() {
+  const name   = document.getElementById('comp-name').value.trim();
+  let url      = document.getElementById('comp-url').value.trim();
+  const brandInput = document.getElementById('brandFilterInput').value.trim();
+  const brands = brandInput ? brandInput.split(',').map(b => b.trim()).filter(Boolean) : [];
+
+  console.log('addCompetitor called:', { name, url, brands });
+
+  if (!name) return showToast('Enter a competitor name', 'error');
+  if (!url)  return showToast('Enter the website URL', 'error');
+
+  // Add https:// if missing
+  if (!url.startsWith('http')) url = `https://${url}`;
+
+  // Always keep the full URL — both AMX and MCAS use specific collection paths
+  // with filters/vendor params that must be preserved for accurate scraping.
+  try {
+    new URL(url); // just validate — don't strip anything
+  } catch (e) {
+    return showToast('Invalid URL format', 'error');
+  }
+
+  try {
+    const entry = await api('POST', '/api/competitors', { name, url, brands });
+    S.competitors.push(entry);
+    // Reset form
+    document.getElementById('comp-name').value = '';
+    document.getElementById('comp-url').value  = '';
+    document.getElementById('brandFilterInput').value = '';
+    renderCompetitors();
+    showToast(`"${name}" added successfully`);
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+async function deleteCompetitor(id) {
+  if (!confirm('Remove this competitor?')) return;
+  try {
+    await api('DELETE', `/api/competitors/${id}`);
+    S.competitors = S.competitors.filter(c => c.id !== id);
+    renderCompetitors();
+    showToast('Competitor removed');
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+function scanCompetitor(id) {
+  const c = S.competitors.find(x => x.id === id);
+  if (!c) return;
+  document.getElementById('scan-competitor').value = id;
+  refreshScanCompetitorPreview();
+  goto('scan');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// SCAN
+// ═══════════════════════════════════════════════════════════════════
+function refreshScanCompetitorSelect() {
+  const sel = document.getElementById('scan-competitor');
+  const cur = sel.value;
+  sel.innerHTML = '<option value="">— select a competitor —</option>';
+  S.competitors.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id; opt.textContent = c.name;
+    sel.appendChild(opt);
+  });
+  if (cur) sel.value = cur;
+  refreshScanCompetitorPreview();
+}
+
+document.getElementById('scan-competitor').addEventListener('change', refreshScanCompetitorPreview);
+
+function refreshScanCompetitorPreview() {
+  const id  = document.getElementById('scan-competitor').value;
+  const c   = S.competitors.find(x => x.id === id);
+  const box = document.getElementById('scanCompetitorPreview');
+  const txt = document.getElementById('scanPreviewText');
+  const vpw = document.getElementById('vendorPickerWrap');
+  if (c) {
+    const brandStr = c.brands?.length ? c.brands.join(', ') : 'all brands';
+    txt.textContent = `Will scan ${c.url} for ${brandStr}.`;
+    box.style.display = '';
+    if (vpw) vpw.style.display = '';
+  } else {
+    box.style.display = 'none';
+    if (vpw) vpw.style.display = 'none';
+  }
+}
+
+// Load vendors from Shopify and populate the picker
+async function loadVendors() {
+  const btn = document.getElementById('loadVendorsBtn');
+  const sel = document.getElementById('vendorPicker');
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+  try {
+    const data = await api('GET', '/api/vendors');
+    sel.innerHTML = '<option value="">— pick a vendor to add —</option>';
+    (data.vendors || []).sort().forEach(v => {
+      const opt = document.createElement('option');
+      opt.value = v; opt.textContent = v;
+      sel.appendChild(opt);
+    });
+    showToast(`Loaded ${data.vendors?.length || 0} vendors`);
+  } catch(e) {
+    showToast('Could not load vendors: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Load vendors'; }
+  }
+}
+
+// Add selected vendor to the brand tag input
+function addVendorFromPicker() {
+  const sel = document.getElementById('vendorPicker');
+  const vendor = sel.value;
+  if (!vendor) return;
+  if (!S.scanBrands.includes(vendor)) {
+    S.scanBrands.push(vendor);
+    renderBrandTags('scanBrandTagsWrap', S.scanBrands, 'scanBrandTagInput');
+    showToast(`Added "${vendor}" to brand filter`);
+  }
+  sel.value = ''; // reset picker
+}
+
+async function startScan() {
+  const id = document.getElementById('scan-competitor').value;
+  const c  = S.competitors.find(x => x.id === id);
+  if (!c) return showToast('Select a competitor first', 'error');
+
+  const overrideBrands = [...S.scanBrands];
+  const brands      = overrideBrands.length ? overrideBrands : (c.brands || []);
+  const useCache    = document.getElementById('useCacheCheckbox').checked;
+  const maxProducts = parseInt(document.getElementById('maxProductsInput').value) || 20;
+  const maxPages    = parseInt(document.getElementById('maxPagesInput').value)    || 5;
+
+  // Show progress UI
+  document.getElementById('scanConfig').style.display = 'none';
+  document.getElementById('scanProgress').style.display = '';
+  document.getElementById('scanDone').style.display    = 'none';
+  updateScanProgress({ progress: 0, message: 'Starting…', status: 'scraping' });
+  clearTerminal();
+  setTerminalActive(true);
+  appendTerminalLine('Starting scan…', 'log');
+
+  try {
+    const { jobId } = await api('POST', '/api/scrape', {
+      competitorUrl:  c.url,
+      competitorName: c.name,
+      competitorId:   c.id,
+      brands,
+      useCache,
+      maxProducts,
+      maxPages,
+    });
+    S.currentJob = jobId;
+    pollJob(jobId);
+  } catch(e) {
+    showToast('Failed to start scan: ' + e.message, 'error');
+    resetScan();
+  }
+}
+
+function pollJob(jobId) {
+  if (S.pollTimer) clearInterval(S.pollTimer);
+  S.pollTimer = setInterval(async () => {
+    try {
+      const job = await api('GET', `/api/scrape/${jobId}`);
+      updateScanProgress(job);
+      if (job.status === 'done' || job.status === 'cancelled' || job.status === 'error') {
+        clearInterval(S.pollTimer);
+        if (job.status === 'done' || job.status === 'cancelled') {
+          S.lastResult = job.result;
+          S.currentScanId = null; // fresh scan — no history ID yet (saved by backend)
+          // Ensure variantGaps is always an array
+          if (!S.lastResult.variantGaps) S.lastResult.variantGaps = [];
+          // Update the Missing sizes badge count
+          const vgBadge = document.getElementById('variantGapCount');
+          if (vgBadge) {
+            const vgCount = S.lastResult.variantGaps.length;
+            vgBadge.textContent = vgCount;
+            vgBadge.style.display = vgCount > 0 ? '' : 'none';
+          }
+          if (job.result?.matchedCount !== undefined || job.result?.matched) {
+            S.hostProductCount = (job.result.matched?.length || 0) + (job.result.missing?.length || 0);
+          }
+          setTerminalActive(false);
+          // Get the newly saved scan history ID so we can persist updates later
+          try {
+            const hist = await api('GET', '/api/scan-history');
+            if (hist?.length) S.currentScanId = hist[0].id; // most recent
+          } catch(_) {}
+          // Auto-add partial stock items to watchlist — MISSING only.
+          // matched = already in your store, never add those.
+          if (job.result?.missing?.length) {
+            const missingOnly = (job.result.missing || []).map(p => ({
+              ...p, competitorName: job.result.competitorName || '',
+            }));
+            syncWatchlistFromResults(missingOnly);
+          }
+          showScanDone(job);
+          refreshDashboard();
+          loadAndRenderHistory();
+        } else {
+          showToast('Scan error: ' + job.error, 'error');
+          resetScan();
+        }
+      }
+    } catch(e) {}
+  }, 1200);
+}
+
+function updateScanProgress(job) {
+  const icons = { scraping: '🔍', comparing: '⚖️', done: '✅', error: '❌', queued: '⏳' };
+  document.getElementById('spIcon').textContent = icons[job.status] || '🔍';
+  document.getElementById('spTitle').textContent = job.status === 'scraping' ? 'Scraping competitor…'
+    : job.status === 'comparing' ? 'Comparing catalogues…'
+    : job.status === 'done' ? 'Scan complete!'
+    : job.status === 'error' ? 'Scan failed'
+    : 'Working…';
+  document.getElementById('spMsg').textContent  = job.message || '';
+  document.getElementById('spBar').style.width  = (job.progress || 0) + '%';
+  document.getElementById('spPct').textContent  = (job.progress || 0) + '%';
+}
+
+function showScanDone(job) {
+  const r = job.result;
+  document.getElementById('scanProgress').style.display = 'none';
+  document.getElementById('scanDone').style.display     = '';
+  const wasCancelled = r.wasCancelled || job.status === 'cancelled';
+  document.getElementById('scanDoneMsg').textContent = wasCancelled
+    ? `Scan stopped — showing ${r.missing.length} missing from ${r.scrapedCount} collected products.`
+    : `Scan complete — found ${r.missing.length} missing products and ${r.matched.length} already in your store.`;
+  document.getElementById('scanDoneAlert').className = wasCancelled
+    ? 'alert alert-warning mb-4' : 'alert alert-success mb-4';
+
+  // Brand summary cards
+  const cards = document.getElementById('scanSummaryCards');
+  cards.innerHTML = '';
+  Object.entries(r.summary || {}).slice(0, 6).forEach(([brand, s]) => {
+    cards.innerHTML += `
+      <div class="card stat-card fade-in">
+        <div class="stat-val" style="color:var(--red)">${s.missing}</div>
+        <div class="stat-lbl">${esc(brand)}</div>
+        <div class="stat-sub">${s.total} on competitor · ${s.matched} you have</div>
+      </div>`;
+  });
+}
+
+function resetScan() {
+  clearInterval(S.pollTimer);
+  document.getElementById('scanConfig').style.display   = '';
+  document.getElementById('scanProgress').style.display = 'none';
+  document.getElementById('scanDone').style.display     = 'none';
+}
+
+async function cancelScan() {
+  if (!S.currentJob) return;
+  const btn = document.getElementById('cancelScanBtn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Stopping…'; }
+  try {
+    await api('POST', `/api/scrape/${S.currentJob}/cancel`);
+    showToast('Stopping scan — collecting partial results…', 'warning');
+  } catch(e) {
+    showToast('Could not cancel: ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = 'Stop scan & show collected results'; }
+  }
+}
+
+function saveRecentScan(job) { loadAndRenderHistory(); }
+
+// ═══════════════════════════════════════════════════════════════════
+// SCAN HISTORY
+// ═══════════════════════════════════════════════════════════════════
+let S_history = [];
+
+async function loadAndRenderHistory() {
+  try { S_history = await api('GET', '/api/scan-history'); } catch(e) { S_history = []; }
+  renderHistory();
+  refreshDashboardRecentScans();
+}
+
+function renderHistory() {
+  const listEl = document.getElementById('historyList');
+  const emptyEl = document.getElementById('historyEmpty');
+  if (!listEl) return;
+  if (!S_history.length) {
+    if (emptyEl) emptyEl.style.display = '';
+    listEl.innerHTML = ''; return;
+  }
+  if (emptyEl) emptyEl.style.display = 'none';
+  listEl.innerHTML = S_history.map(scan => {
+    const date   = new Date(scan.scannedAt).toLocaleString('en-AU', { dateStyle:'medium', timeStyle:'short' });
+    const brands = scan.brands?.length ? scan.brands.join(', ') : 'All brands';
+    const summary = Object.entries(scan.summary||{}).slice(0,3).map(([b,s])=>`${b}: ${s.missing} missing`).join(' · ');
+    return `<div class="card mb-4" style="overflow:hidden">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap">
+        <div>
+          <div style="font-weight:600;font-size:15px">${esc(scan.competitorName||scan.competitorUrl)}</div>
+          <div class="text-sm text-muted" style="margin-top:3px">${esc(date)} · ${esc(brands)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-shrink:0">
+          <span style="color:var(--red);font-weight:600">${scan.missingCount} missing</span>
+          <span style="color:var(--green)">${scan.matchedCount} matched</span>
+          <button class="btn btn-primary btn-sm" onclick="loadHistoryScan('${esc(scan.id)}')">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M9 17H7A5 5 0 017 7h2M15 7h2a5 5 0 010 10h-2M8 12h8"/></svg>Load results
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="deleteHistoryScan('${esc(scan.id)}')" title="Delete this scan">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+          </button>
+        </div>
+      </div>
+      ${summary?`<div class="card-body" style="padding:12px 24px;background:var(--surface2);font-size:12.5px;color:var(--text2)">${esc(summary)}</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+async function loadHistoryScan(id) {
+  try {
+    const entry = await api('GET', `/api/scan-history/${id}`);
+    if (!entry?.result) return showToast('Could not load scan data', 'error');
+    [...(entry.result.missing||[]), ...(entry.result.matched||[])].forEach(p => { p.isDraft = p.isDraft||false; });
+    S.lastResult = entry.result;
+    S.currentScanId = id;
+    S.lastResult._historyId = id;
+    S.lastResult._scannedAt = entry.scannedAt;
+    refreshDashboard();
+    goto('results');
+    showToast(`Loaded scan from ${new Date(entry.scannedAt).toLocaleDateString('en-AU')}`);
+  } catch(e) { showToast('Error loading scan: ' + e.message, 'error'); }
+}
+
+function closeHistoryScan() {
+  S.lastResult = null;
+  const banner = document.getElementById('historyBanner');
+  if (banner) banner.style.display = 'none';
+  refreshDashboard();
+  goto('history');
+}
+
+async function deleteHistoryScan(id) {
+  if (!confirm('Delete this scan from history?')) return;
+  // If currently viewing this scan, clear it first
+  if (S.lastResult?._historyId === id) {
+    S.lastResult = null;
+    refreshDashboard();
+  }
+  try {
+    await api('DELETE', `/api/scan-history/${id}`);
+    S_history = S_history.filter(s => s.id !== id);
+    renderHistory();
+    showToast('Scan deleted');
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+function refreshDashboardRecentScans() {
+  const el = document.getElementById('recentScans');
+  if (!el) return;
+  if (!S_history.length && !S.lastResult) {
+    el.innerHTML = `<div class="empty" style="padding:24px 0"><div class="icon">📋</div><p>No scans run yet.</p></div>`;
+    return;
+  }
+  const scans = S_history.slice(0,5);
+  if (!scans.length && S.lastResult) {
+    const r = S.lastResult;
+    el.innerHTML = `<div style="padding:16px 0">
+      <div style="font-weight:600;margin-bottom:4px">${esc(r.competitorName||r.competitorUrl)}</div>
+      <div class="text-sm text-muted">${r.missing.length} missing · ${r.matched.length} matched</div>
+      <div style="margin-top:12px"><button class="btn btn-primary btn-sm" onclick="goto('results')">View results</button></div>
+    </div>`;
+    return;
+  }
+  el.innerHTML = scans.map(scan => {
+    const date = new Date(scan.scannedAt).toLocaleString('en-AU', { dateStyle:'short', timeStyle:'short' });
+    return `<div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <div style="font-weight:500;font-size:13px">${esc(scan.competitorName||scan.competitorUrl)}</div>
+        <div class="text-sm text-muted">${esc(date)} · <span style="color:var(--red)">${scan.missingCount} missing</span></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="loadHistoryScan('${esc(scan.id)}')">Load →</button>
+    </div>`;
+  }).join('') + `<div style="margin-top:10px"><button class="btn btn-ghost btn-sm" onclick="goto('history')">View all history →</button></div>`;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// WATCHLIST — products with partially unavailable variants
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Watchlist — server-persisted to backend/data/watchlist.json ─────────────
+let S_watchlistCache = null;
+
+async function getWatchlist() {
+  if (S_watchlistCache !== null) return S_watchlistCache;
+  try {
+    S_watchlistCache = await api('GET', '/api/watchlist');
+    return S_watchlistCache;
+  } catch(_) { return []; }
+}
+
+function updateWatchlistBadge() {
+  const items = S_watchlistCache || [];
+  const badge = document.getElementById('watchlistBadge');
+  if (!badge) return;
+  if (items.length > 0) {
+    badge.style.display = '';
+    badge.textContent = items.length;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+async function syncWatchlistFromResults(products) {
+  const current     = await getWatchlist();
+  const existingIds = new Set(current.map(w => w.sourceId));
+  const toAdd = [];
+
+  for (const p of (products || [])) {
+    const variants    = p.variants || [];
+    const unavailable = variants.filter(v => v.available === false || v.available === 0);
+    const available   = variants.filter(v => v.available !== false && v.available !== 0);
+
+    if (unavailable.length > 0 && available.length > 0 && !existingIds.has(p.sourceId)) {
+      toAdd.push({
+        sourceId:            p.sourceId,
+        title:               p.title,
+        vendor:              p.vendor,
+        productType:         p.productType,
+        images:              p.images,
+        priceMin:            p.priceMin,
+        priceMax:            p.priceMax,
+        sourceUrl:           p.sourceUrl,
+        competitorName:      p.competitorName || '',
+        scannedAt:           new Date().toISOString(),
+        availableVariants:   available.map(v => ({ size: v.size, sku: v.sku, price: v.price })),
+        unavailableVariants: unavailable.map(v => ({ size: v.size })),
+        allVariants:         variants,
+        isDraft:             p.isDraft || false,
+      });
+    }
+  }
+
+  if (toAdd.length) {
+    try {
+      await api('POST', '/api/watchlist', { items: toAdd });
+      S_watchlistCache = null;
+      await getWatchlist();
+      updateWatchlistBadge();
+      showToast(`${toAdd.length} product${toAdd.length !== 1 ? 's' : ''} added to Watchlist (partial stock)`, 'warning');
+    } catch(e) {
+      showToast('Could not save to watchlist: ' + e.message, 'error');
+    }
+  }
+}
+
+async function removeFromWatchlist(sourceId) {
+  try {
+    await api('DELETE', `/api/watchlist/${encodeURIComponent(sourceId)}`);
+    S_watchlistCache = (S_watchlistCache || []).filter(w => w.sourceId !== sourceId);
+    updateWatchlistBadge();
+    renderWatchlist();
+    showToast('Removed from watchlist');
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+function downloadWatchlist() {
+  window.location.href = '/api/watchlist/download';
+}
+function clearWatchlist() {
+  if (!confirm('Clear all watchlist items?')) return;
+  saveWatchlist([]);
+  renderWatchlist();
+  showToast('Watchlist cleared');
+}
+
+function removeFromWatchlist(sourceId) {
+  const items = getWatchlist().filter(w => w.sourceId !== sourceId);
+  saveWatchlist(items);
+  renderWatchlist();
+  showToast('Removed from watchlist');
+}
+
+// Selected sourceIds on the watchlist page
+const S_watchlistSel = new Set();
+
+function updateWatchlistSelBar() {
+  const bar   = document.getElementById('watchlistSelBar');
+  const count = document.getElementById('watchlistSelCount');
+  if (!bar) return;
+  if (S_watchlistSel.size > 0) {
+    bar.style.display = '';
+    count.textContent = `${S_watchlistSel.size} selected`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function toggleWatchlistItem(sourceId) {
+  if (S_watchlistSel.has(sourceId)) S_watchlistSel.delete(sourceId);
+  else S_watchlistSel.add(sourceId);
+  // Re-render so inline styles update (watchlist cards use inline styles for selection)
+  renderWatchlist();
+  updateWatchlistSelBar();
+}
+
+async function watchlistSelectAll() {
+  (await getWatchlist()).forEach(w => S_watchlistSel.add(w.sourceId));
+  renderWatchlist();
+}
+
+function watchlistSelectNone() {
+  S_watchlistSel.clear();
+  renderWatchlist();
+}
+
+async function renderWatchlist() {
+  const items   = await getWatchlist();
+  const empty   = document.getElementById('watchlistEmpty');
+  const content = document.getElementById('watchlistContent');
+  const meta    = document.getElementById('watchlistMeta');
+  getWatchlist().then(updateWatchlistBadge); // load and show badge
+  updateWatchlistSelBar();
+
+  if (!items.length) {
+    if (empty)   empty.style.display = '';
+    if (content) content.innerHTML   = '';
+    if (meta)    meta.textContent    = '';
+    return;
+  }
+
+  if (empty) empty.style.display = 'none';
+  if (meta)  meta.textContent    = `${items.length} product${items.length !== 1 ? 's' : ''} waiting for restock`;
+
+  content.innerHTML = items.map((w, idx) => {
+    const img     = w.images?.[0] || '';
+    const date    = new Date(w.scannedAt).toLocaleDateString('en-AU', { dateStyle: 'medium' });
+    const price   = w.priceMin ? `$${parseFloat(w.priceMin).toFixed(2)}` : '—';
+    const avail   = w.availableVariants   || [];
+    const unavail = w.unavailableVariants || [];
+    const isSel   = S_watchlistSel.has(w.sourceId);
+
+    return `
+    <div style="
+        margin-bottom:16px;
+        background:var(--surface);
+        border-radius:var(--radius-lg);
+        box-shadow:var(--shadow);
+        overflow:visible;
+        position:relative;
+        cursor:pointer;
+        border:${isSel ? '2px solid var(--accent)' : '1px solid var(--border)'};
+        box-shadow:${isSel ? '0 0 0 3px rgba(27,94,66,.15),var(--shadow)' : 'var(--shadow)'};
+        transition:border .15s,box-shadow .15s;
+      " id="wcard-${esc(w.sourceId)}" onclick="toggleWatchlistItem('${esc(w.sourceId)}')">
+      <!-- Checkbox -->
+      <div style="
+        position:absolute;top:12px;left:12px;z-index:10;
+        width:20px;height:20px;
+        border-radius:4px;
+        display:flex;align-items:center;justify-content:center;
+        background:${isSel ? 'var(--accent)' : 'var(--surface)'};
+        border:2px solid ${isSel ? 'var(--accent)' : 'var(--border2)'};
+        transition:all .15s;
+      ">
+        ${isSel ? `<svg fill="none" viewBox="0 0 10 8" style="width:10px;height:10px">
+          <polyline points="1,4 4,7 9,1" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>` : ''}
+      </div>
+      <div class="card-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:16px 24px 16px 44px">
+        ${img ? `<img src="${esc(img)}" style="width:52px;height:52px;object-fit:cover;border-radius:6px;flex-shrink:0" onerror="this.style.display='none'"/>` : '<div style="width:52px;height:52px;background:var(--surface2);border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px">📦</div>'}
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:14px">${esc(w.title)}</div>
+          <div class="text-sm text-muted" style="margin-top:2px">${esc(w.vendor)} · ${esc(w.productType || '')} · ${price} · Scanned ${esc(date)}</div>
+          ${w.sourceUrl ? `<a href="${esc(w.sourceUrl)}" target="_blank" class="text-sm" style="color:var(--blue)" onclick="event.stopPropagation()">View on ${esc(w.competitorName || 'competitor')} ↗</a>` : ''}
+          ${w.isDraft ? '<span class="badge badge-green" style="margin-left:8px">📤 Drafted</span>' : ''}
+        </div>
+        <div style="display:flex;gap:8px;flex-shrink:0" onclick="event.stopPropagation()">
+          <button class="btn btn-secondary btn-sm" onclick="rescrapeOne(${idx})" title="Rescrape this product for latest variant availability">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            Rescrape
+          </button>
+          <button class="btn btn-primary btn-sm" onclick="uploadWatchlistItem(${idx})" title="Upload available sizes to Shopify">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M12 5v14M5 12h14"/></svg>
+            Upload available
+          </button>
+          <button class="btn btn-ghost btn-sm" onclick="removeFromWatchlist('${esc(w.sourceId)}')" title="Remove from watchlist">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="card-body" style="padding:14px 24px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--green);margin-bottom:8px">
+              ✓ Available (${avail.length} size${avail.length !== 1 ? 's' : ''})
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              ${avail.map(v => `
+                <div style="background:var(--green-bg);border:1px solid var(--green-b);border-radius:6px;padding:4px 10px;font-size:12px">
+                  <span style="font-weight:600">${esc(v.size)}</span>
+                  ${v.sku ? `<span style="color:var(--text2);margin-left:4px">${esc(v.sku)}</span>` : ''}
+                  ${v.price ? `<span style="color:var(--text2);margin-left:4px">$${parseFloat(v.price).toFixed(2)}</span>` : ''}
+                </div>`).join('')}
+            </div>
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:8px">
+              ⏳ Unavailable — check back (${unavail.length} size${unavail.length !== 1 ? 's' : ''})
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              ${unavail.map(v => `
+                <div style="background:var(--amber-bg);border:1px solid var(--amber-b);border-radius:6px;padding:4px 10px;font-size:12px;opacity:.8">
+                  <span style="font-weight:600">${esc(v.size)}</span>
+                </div>`).join('')}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function uploadWatchlistItem(idx) {
+  const items = getWatchlist();
+  const w = items[idx];
+  if (!w) return;
+
+  // Build a product with ONLY the available variants for Shopify upload
+  const productToUpload = {
+    ...w,
+    variants: w.availableVariants.map(v => ({ ...v, available: true, inventoryQty: 0 })),
+    tags: [w.tags, 'Scraped', 'Partial Stock', w.competitorName].filter(Boolean).join(', '),
+  };
+
+  try {
+    const results = await api('POST', '/api/create-drafts', { products: [productToUpload] });
+    const created = results.created?.length || 0;
+    const failed  = results.failed?.length  || 0;
+
+    if (created > 0) {
+      // Mark as drafted in watchlist
+      await api('PUT', `/api/watchlist/${encodeURIComponent(w.sourceId)}`, { isDraft: true });
+      if (S_watchlistCache) {
+        const ci = S_watchlistCache.findIndex(x => x.sourceId === w.sourceId);
+        if (ci !== -1) S_watchlistCache[ci].isDraft = true;
+      }
+      renderWatchlist();
+      showToast(`Draft created in Shopify with ${w.availableVariants.length} available size${w.availableVariants.length !== 1 ? 's' : ''}`);
+    } else {
+      showToast(failed ? 'Failed to create draft: ' + (results.failed?.[0]?.error || 'unknown error') : 'No draft created', 'error');
+    }
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+// ── Rescrape a single watchlist product ──────────────────────────────────────
+async function rescrapeOne(idx) {
+  const items = getWatchlist();
+  const w = items[idx];
+  if (!w || !w.sourceUrl) return showToast('No product URL to rescrape', 'error');
+  await rescrapeItems([w]);
+}
+
+// ── Rescrape all selected watchlist items ─────────────────────────────────────
+async function rescrapeSelected() {
+  const items    = getWatchlist();
+  const selected = items.filter(w => S_watchlistSel.has(w.sourceId));
+  if (!selected.length) return showToast('Select products first', 'error');
+  await rescrapeItems(selected);
+}
+
+// ── Core rescrape logic ───────────────────────────────────────────────────────
+async function rescrapeItems(itemsToRescrape) {
+  const prog = document.getElementById('watchlistRescrapeProgress');
+  const msg  = document.getElementById('watchlistRescrapeMsg');
+  if (prog) prog.style.display = '';
+
+  let updated = 0;
+  const watchlist = getWatchlist();
+
+  for (let i = 0; i < itemsToRescrape.length; i++) {
+    const w = itemsToRescrape[i];
+    if (msg) msg.textContent = `Rescraping ${i + 1}/${itemsToRescrape.length}: ${w.title}…`;
+
+    try {
+      // Call backend to scrape just this one product URL
+      const result = await api('POST', '/api/rescrape-product', { url: w.sourceUrl });
+
+      if (result?.product) {
+        const p = result.product;
+        const variants   = p.variants || [];
+        const newAvail   = variants.filter(v => v.available !== false && v.available !== 0);
+        const newUnavail = variants.filter(v => v.available === false || v.available === 0);
+
+        // Update the watchlist entry
+        if (newUnavail.length === 0) {
+          // ALL sizes now available — auto-remove from watchlist
+          await api('DELETE', `/api/watchlist/${encodeURIComponent(w.sourceId)}`);
+          S_watchlistCache = (S_watchlistCache || []).filter(x => x.sourceId !== w.sourceId);
+          showToast(`✅ "${w.title}" — all sizes now available! Added to Gap Results.`, 'success');
+        } else {
+          // Update available/unavailable split via API
+          const updates = {
+            availableVariants:   newAvail.map(v => ({ size: v.size, sku: v.sku, price: v.price })),
+            unavailableVariants: newUnavail.map(v => ({ size: v.size })),
+            allVariants:         variants,
+            scannedAt:           new Date().toISOString(),
+          };
+          await api('PUT', `/api/watchlist/${encodeURIComponent(w.sourceId)}`, updates);
+          const wIdx = (S_watchlistCache || []).findIndex(x => x.sourceId === w.sourceId);
+          if (wIdx !== -1) S_watchlistCache[wIdx] = { ...S_watchlistCache[wIdx], ...updates };
+          const newlyAvail = newAvail.length - (w.availableVariants?.length || 0);
+          if (newlyAvail > 0) showToast(`${newlyAvail} new size${newlyAvail !== 1 ? 's' : ''} now available for "${w.title}"`);
+        }
+        updated++;
+      }
+    } catch(e) {
+      showToast(`Error rescraping "${w.title}": ${e.message}`, 'error');
+    }
+  }
+
+  saveWatchlist(watchlist);
+  S_watchlistSel.clear();
+  if (prog) prog.style.display = 'none';
+  renderWatchlist();
+  if (updated > 0) showToast(`Rescrape complete — ${updated} product${updated !== 1 ? 's' : ''} updated`);
+}
+
+// ── Upload selected items' available sizes ────────────────────────────────────
+async function uploadSelectedWatchlist() {
+  const items    = getWatchlist();
+  const selected = items.filter(w => S_watchlistSel.has(w.sourceId));
+  if (!selected.length) return showToast('Select products first', 'error');
+
+  const products = selected.map(w => ({
+    ...w,
+    variants: (w.availableVariants || []).map(v => ({ ...v, available: true, inventoryQty: 0 })),
+    tags: [w.tags, 'Scraped', 'Partial Stock', w.competitorName].filter(Boolean).join(', '),
+  }));
+
+  try {
+    const results = await api('POST', '/api/create-drafts', { products });
+    const created = results.created?.length || 0;
+    if (created > 0) {
+      // Mark drafted
+      const watchlist = getWatchlist();
+      for (const w of selected) {
+        await api('PUT', `/api/watchlist/${encodeURIComponent(w.sourceId)}`, { isDraft: true });
+        const idx = (S_watchlistCache || []).findIndex(x => x.sourceId === w.sourceId);
+        if (idx !== -1) S_watchlistCache[idx].isDraft = true;
+      }
+      S_watchlistSel.clear();
+      renderWatchlist();
+      showToast(`${created} draft${created !== 1 ? 's' : ''} created in Shopify`);
+    } else {
+      showToast('No drafts created — ' + (results.failed?.[0]?.error || 'check Shopify'), 'error');
+    }
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+// ── Remove selected items ─────────────────────────────────────────────────────
+async function removeSelectedWatchlist() {
+  if (!S_watchlistSel.size) return;
+  const count = S_watchlistSel.size;
+  if (!confirm(`Remove ${count} item${count !== 1 ? 's' : ''} from watchlist?`)) return;
+  try {
+    await api('POST', '/api/watchlist/remove-many', { sourceIds: [...S_watchlistSel] });
+    S_watchlistCache = (S_watchlistCache || []).filter(w => !S_watchlistSel.has(w.sourceId));
+    S_watchlistSel.clear();
+    getWatchlist().then(updateWatchlistBadge); // load and show badge
+    renderWatchlist();
+    showToast(`${count} item${count !== 1 ? 's' : ''} removed`);
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+async function resetDraftStatus() {
+  if (!confirm('Clear all draft badges? Use this if products were deleted from Shopify.')) return;
+  try {
+    await api('DELETE', '/api/draft-status');
+    // Re-render current results without draft badges
+    if (S.lastResult) {
+      [...S.lastResult.missing, ...S.lastResult.matched].forEach(p => { p.isDraft = false; });
+      applyFilters();
+    }
+    showToast('Draft badges cleared');
+  } catch(e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// RESULTS
+// ═══════════════════════════════════════════════════════════════════
+function renderResults() {
+  if (!S.lastResult) {
+    document.getElementById('resultsEmpty').style.display   = '';
+    document.getElementById('resultsContent').style.display = 'none';
+    return;
+  }
+  document.getElementById('resultsEmpty').style.display   = 'none';
+  document.getElementById('resultsContent').style.display = '';
+
+  const r = S.lastResult;
+  document.getElementById('resultsMeta').textContent =
+    `vs ${r.competitorName || r.competitorUrl} · ${r.missing.length + r.matched.length} products scraped`;
+
+  // Show/hide history banner
+  const banner = document.getElementById('historyBanner');
+  const bannerText = document.getElementById('historyBannerText');
+  if (r._historyId && banner && bannerText) {
+    const date = new Date(r._scannedAt).toLocaleString('en-AU', { dateStyle:'medium', timeStyle:'short' });
+    bannerText.textContent = `Viewing historical scan from ${date} — ${r.competitorName || r.competitorUrl}`;
+    banner.style.display = 'flex';
+  } else if (banner) {
+    banner.style.display = 'none';
+  }
+
+  // Brand summary
+  renderBrandSummary(r.summary);
+
+  // Populate brand/type filters
+  populateFilters(r.missing, r.matched);
+
+  // Apply current filters
+  applyFilters();
+}
+
+function renderBrandSummary(summary) {
+  const el = document.getElementById('brandSummaryBody');
+  if (!summary || !Object.keys(summary).length) { el.innerHTML = ''; return; }
+
+  el.innerHTML = Object.entries(summary).map(([brand, s]) => {
+    const missingPct = s.total ? (s.missing / s.total) * 100 : 0;
+    const matchedPct = s.total ? (s.matched / s.total) * 100 : 0;
+    return `
+      <div class="brand-row">
+        <div class="brand-name">${esc(brand)}</div>
+        <div class="brand-bars">
+          <div class="mini-bar-wrap" title="${s.missing} missing">
+            <div class="mini-bar" style="width:${missingPct}%;background:var(--red);opacity:.7"></div>
+          </div>
+          <div class="mini-bar-wrap" title="${s.matched} matched">
+            <div class="mini-bar" style="width:${matchedPct}%;background:var(--green);opacity:.7"></div>
+          </div>
+        </div>
+        <div class="brand-nums">
+          <span style="color:var(--red)">⬇ ${s.missing} missing</span>
+          <span style="color:var(--green)">✓ ${s.matched} have</span>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function populateFilters(missing, matched) {
+  const all = [...missing, ...matched];
+  const brands = [...new Set(all.map(p => p.vendor).filter(Boolean))].sort();
+  const types  = [...new Set(all.map(p => p.productType).filter(Boolean))].sort();
+
+  const bSel = document.getElementById('filterBrand');
+  const tSel = document.getElementById('filterType');
+  bSel.innerHTML = '<option value="">All brands</option>' + brands.map(b => `<option>${esc(b)}</option>`).join('');
+  tSel.innerHTML = '<option value="">All types</option>'  + types.map(t => `<option>${esc(t)}</option>`).join('');
+}
+
+function filterResults(tab) {
+  S.activeTab = tab;
+  document.getElementById('tab-missing').classList.toggle('active', tab === 'missing');
+  document.getElementById('tab-matched').classList.toggle('active', tab === 'matched');
+  document.getElementById('tab-variantgap').classList.toggle('active', tab === 'variantgap');
+  S.selectedProducts.clear();
+  applyFilters();
+  updateSelectionBar();
+}
+
+function applyFilters() {
+  if (!S.lastResult) return;
+  S.brandFilter = document.getElementById('filterBrand').value;
+  S.typeFilter  = document.getElementById('filterType').value;
+
+  // Handle variant gap tab separately
+  if (S.activeTab === 'variantgap') {
+    let gaps = S.lastResult.variantGaps || [];
+    if (S.brandFilter) gaps = gaps.filter(p => p.vendor === S.brandFilter);
+    renderVariantGaps(gaps);
+    document.getElementById('exportAllRow').style.display = 'none';
+    return;
+  }
+
+  let products = S.activeTab === 'missing' ? S.lastResult.missing : S.lastResult.matched;
+  if (S.brandFilter) products = products.filter(p => p.vendor === S.brandFilter);
+  if (S.typeFilter)  products = products.filter(p => p.productType === S.typeFilter);
+
+  renderProductGrid(products);
+  document.getElementById('exportAllRow').style.display = S.activeTab === 'missing' ? '' : 'none';
+}
+
+const S_imgRegistry = {};
+let S_imgCounter = 0;
+
+function renderVariantGaps(gaps) {
+  const grid = document.getElementById('resultsGrid');
+  if (!grid) return;
+  if (!gaps.length) {
+    grid.innerHTML = `<div class="empty"><div class="icon">✅</div><h3>No missing sizes</h3><p>You stock all the same sizes as the competitor for every matched product.</p></div>`;
+    return;
+  }
+  grid.innerHTML = gaps.map(p => {
+    const missingSizes = p.missingSizes || [];
+    const allVariants  = p.variants || [];
+    const haveVariants = allVariants.filter(v => !missingSizes.some(m => (m.size||'').toLowerCase() === (v.option1||v.size||v.title||'').toLowerCase()));
+    const img   = p.images?.[0] || '';
+    const price = p.priceMin ? `$${parseFloat(p.priceMin).toFixed(2)}` : '';
+    return `
+    <div class="card mb-4" style="overflow:hidden">
+      <div class="card-header" style="display:flex;align-items:center;gap:16px;flex-wrap:wrap">
+        ${img ? `<img src="${esc(img)}" style="width:52px;height:52px;object-fit:cover;border-radius:6px;flex-shrink:0" onerror="this.style.display='none'"/>` : ''}
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:14px">${esc(p.title)}</div>
+          <div class="text-sm text-muted" style="margin-top:2px">${esc(p.vendor)} · ${esc(price)}</div>
+          ${p.sourceUrl ? `<a href="${esc(p.sourceUrl)}" target="_blank" class="text-sm" style="color:var(--blue)">View on competitor ↗</a>` : ''}
+        </div>
+        <div style="background:var(--amber);color:#fff;font-size:11px;font-weight:700;padding:5px 12px;border-radius:6px;flex-shrink:0">
+          ⚠ ${missingSizes.length} size${missingSizes.length!==1?'s':''} missing
+        </div>
+      </div>
+      <div class="card-body" style="padding:14px 24px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--green);margin-bottom:8px">✓ You stock (${haveVariants.length})</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              ${haveVariants.map(v=>`<div style="background:var(--green-bg);border:1px solid var(--green-b);border-radius:6px;padding:4px 10px;font-size:12px;font-weight:600">${esc(v.option1||v.size||v.title||'')}</div>`).join('')||'<span class="text-sm text-muted">—</span>'}
+            </div>
+          </div>
+          <div>
+            <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:8px">⚠ Competitor has, you don't (${missingSizes.length})</div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              ${missingSizes.map(v=>`<div style="background:var(--amber-bg);border:1px solid var(--amber-b);border-radius:6px;padding:4px 10px;font-size:12px">
+                <span style="font-weight:600">${esc(v.size)}</span>
+                ${v.sku?`<span style="color:var(--text2);margin-left:4px;font-size:11px">${esc(v.sku)}</span>`:''}
+                ${v.price?`<span style="color:var(--text2);margin-left:4px;font-size:11px">$${parseFloat(v.price).toFixed(2)}</span>`:''}
+                ${!v.available?`<span style="color:var(--red);margin-left:4px;font-size:10px">(OOS)</span>`:''}
+              </div>`).join('')}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderProductGrid(products) {
+  const grid = document.getElementById('productsGrid');
+  if (!products.length) {
+    grid.innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="icon">🎉</div><h3>No products here</h3><p>Try changing the filters.</p></div>`;
+    return;
+  }
+  Object.keys(S_imgRegistry).forEach(k => delete S_imgRegistry[k]);
+  S_imgCounter = 0;
+
+  grid.innerHTML = products.map(p => {
+    const rawId    = p.sourceId || p.handle;
+    const cardId   = esc(rawId);
+    const imgKey   = S_imgCounter++;
+    const images   = (p.images||[]).filter(Boolean);
+    const imgSrc   = images[0]||'';
+    const hasMulti = images.length > 1;
+    const price    = p.priceMin ? `$${parseFloat(p.priceMin).toFixed(2)}` : '—';
+    const priceMax = p.priceMax && p.priceMax!==p.priceMin ? ` – $${parseFloat(p.priceMax).toFixed(2)}` : '';
+    const tags     = (p.tags||'').split(',').slice(0,4).map(t=>t.trim()).filter(Boolean);
+    const isSel    = S.selectedProducts.has(rawId);
+    const isDraft  = p.isDraft||false;
+    // Partial stock: has variants but some are unavailable
+    const variants   = p.variants || [];
+    const hasUnavail = variants.some(v => v.available === false || v.available === 0);
+    const hasAvail   = variants.some(v => v.available !== false && v.available !== 0);
+    const isPartial  = variants.length > 0 && hasUnavail && hasAvail;
+    S_imgRegistry[imgKey] = { images, idx:0 };
+    const dots = hasMulti ? `<div class="img-dots" id="dots-${imgKey}">${images.map((_,i)=>`<div class="img-dot${i===0?' active':''}"></div>`).join('')}</div>` : '';
+    return `<div class="product-card${isSel?' selected':''}" id="pcard-${cardId}" onclick="toggleProduct('${cardId}')">
+      <div class="product-card-check"></div>
+      <button class="product-card-delete" onclick="event.stopPropagation();deleteSingleProduct('${cardId}')" title="Remove from results">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5" style="width:12px;height:12px"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+
+      ${isPartial?`<div style="position:absolute;top:8px;left:8px;z-index:5;background:#f59e0b;color:#fff;font-size:10px;font-weight:700;padding:3px 7px;border-radius:4px;letter-spacing:.03em;box-shadow:0 1px 3px rgba(0,0,0,.2)">⚠ Partial Stock</div>`:''}
+      <div class="product-card-img">
+        ${imgSrc?`<img id="img-${imgKey}" src="${esc(imgSrc)}" alt="${esc(p.title)}" loading="lazy" onerror="this.style.display='none'"/>`:'<span>📦</span>'}
+        ${hasMulti?`<button class="img-arrow prev" onclick="event.stopPropagation();cycleImage(${imgKey},-1)">&#8249;</button><button class="img-arrow next" onclick="event.stopPropagation();cycleImage(${imgKey},1)">&#8250;</button>${dots}`:''}
+      </div>
+      <div class="product-card-body">
+        <div class="product-card-brand">${esc(p.vendor||'')}</div>
+        <div class="product-card-title">${esc(p.title||'')}</div>
+        <div class="product-card-price">${price}${priceMax}</div>
+        <div class="product-card-type">${esc(p.productType||'')}</div>
+        ${isPartial?`<div style="font-size:11px;color:#b45309;margin-top:4px;font-weight:500">
+          ✓ ${variants.filter(v=>v.available!==false&&v.available!==0).length} available &nbsp;·&nbsp;
+          ✗ ${variants.filter(v=>v.available===false||v.available===0).length} unavailable
+        </div>`:''}
+        ${tags.length?`<div class="product-card-tags">${tags.map(t=>`<span class="product-card-tag">${esc(t)}</span>`).join('')}</div>`:''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function cycleImage(imgKey, dir) {
+  const e = S_imgRegistry[imgKey];
+  if (!e || e.images.length < 2) return;
+  e.idx = (e.idx + dir + e.images.length) % e.images.length;
+  const img = document.getElementById(`img-${imgKey}`);
+  if (img) { img.style.display=''; img.src = e.images[e.idx]; }
+  const dots = document.getElementById(`dots-${imgKey}`);
+  if (dots) dots.querySelectorAll('.img-dot').forEach((d,i) => d.classList.toggle('active', i===e.idx));
+}
+
+function toggleProduct(id) {
+  if (S.selectedProducts.has(id)) S.selectedProducts.delete(id);
+  else S.selectedProducts.add(id);
+
+  const card = document.getElementById(`pcard-${id}`);
+  if (card) card.classList.toggle('selected', S.selectedProducts.has(id));
+  updateSelectionBar();
+}
+
+function selectAll() {
+  const products = S.activeTab === 'missing' ? S.lastResult.missing : S.lastResult.matched;
+  let filtered = products;
+  if (S.brandFilter) filtered = filtered.filter(p => p.vendor === S.brandFilter);
+  if (S.typeFilter)  filtered = filtered.filter(p => p.productType === S.typeFilter);
+  filtered.forEach(p => S.selectedProducts.add(p.sourceId || p.handle));
+  applyFilters();
+  updateSelectionBar();
+}
+
+function selectNone() {
+  S.selectedProducts.clear();
+  applyFilters();
+  updateSelectionBar();
+}
+
+function updateSelectionBar() {
+  const bar = document.getElementById('selectionBar');
+  const cnt = S.selectedProducts.size;
+  if (cnt > 0 && S.activeTab === 'missing') {
+    bar.style.display = '';
+    document.getElementById('selectionCount').textContent = `${cnt} product${cnt !== 1 ? 's' : ''} selected`;
+  } else {
+    bar.style.display = 'none';
+  }
+}
+
+function deleteSingleProduct(id) {
+  if (!S.lastResult) return;
+  S.lastResult.missing = S.lastResult.missing.filter(p => (p.sourceId||p.handle) !== id);
+  S.lastResult.matched = S.lastResult.matched.filter(p => (p.sourceId||p.handle) !== id);
+  S.selectedProducts.delete(id);
+  applyFilters(); updateSelectionBar();
+  showToast('Product removed from results');
+}
+
+function deleteSelected() {
+  if (!S.selectedProducts.size || !S.lastResult) return;
+  const count = S.selectedProducts.size;
+  const ids = new Set(S.selectedProducts);
+  S.lastResult.missing = S.lastResult.missing.filter(p => !ids.has(p.sourceId||p.handle));
+  S.lastResult.matched = S.lastResult.matched.filter(p => !ids.has(p.sourceId||p.handle));
+  S.selectedProducts.clear();
+  applyFilters(); updateSelectionBar();
+  showToast(`${count} product${count!==1?'s':''} removed from results`);
+}
+
+// ── Create drafts ──────────────────────────────────────────────────
+// Re-check missing products against your Shopify store
+// Removes any products from the missing list that are now in your store
+function recalcSummary() {
+  if (!S.lastResult) return;
+  const allProducts = [...(S.lastResult.missing||[]), ...(S.lastResult.matched||[])];
+  const vendorMap = {};
+  allProducts.forEach(p => {
+    const v = (p.vendor||'').trim();
+    if (!v) return;
+    const key = v.toLowerCase();
+    if (!vendorMap[key]) vendorMap[key] = v;
+  });
+  const summary = {};
+  for (const [bLower, canonical] of Object.entries(vendorMap)) {
+    summary[canonical] = {
+      total:   allProducts.filter(p => (p.vendor||'').toLowerCase() === bLower).length,
+      missing: (S.lastResult.missing||[]).filter(p => (p.vendor||'').toLowerCase() === bLower).length,
+      matched: (S.lastResult.matched||[]).filter(p => (p.vendor||'').toLowerCase() === bLower).length,
+    };
+  }
+  S.lastResult.summary = summary;
+}
+
+async function recheckAgainstShopify() {
+  const btn = document.getElementById('recheckBtn');
+  const origHtml = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '<svg class="spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Checking…'; }
+
+  if (!S.lastResult) {
+    showToast('No scan results loaded');
+    if (btn) { btn.disabled = false; btn.innerHTML = origHtml; }
+    return;
+  }
+
+  try {
+    const allScanned = [...(S.lastResult.missing||[]), ...(S.lastResult.matched||[])];
+    const vendors = [...new Set(allScanned.map(p => p.vendor).filter(Boolean))];
+    showToast(`Live-checking ${vendors.length} vendor${vendors.length!==1?'s':''} against Shopify…`);
+
+    // Fetch fresh Shopify products for every vendor in this scan
+    const hostProds = [];
+    for (const v of vendors) {
+      try {
+        const hp = await api('GET', `/api/host-products?vendor=${encodeURIComponent(v)}`);
+        hostProds.push(...(hp.products || []));
+      } catch(_) {}
+    }
+
+    // Build lookup sets
+    const hostTitles  = new Set(hostProds.map(p => normaliseTitle(p.title)));
+    const hostHandles = new Set(hostProds.map(p => (p.handle||'').toLowerCase()));
+    const hostSkus    = new Set(hostProds.flatMap(p =>
+      (p.variants||[]).map(v => (v.sku||'').toLowerCase().trim()).filter(Boolean)
+    ));
+
+    const isNowStocked = (p) => {
+      if (hostTitles.has(normaliseTitle(p.title)))       return true;
+      if (hostHandles.has((p.handle||'').toLowerCase())) return true;
+      const skus = (p.variants||[]).map(v => (v.sku||'').toLowerCase().trim()).filter(Boolean);
+      return skus.some(s => hostSkus.has(s));
+    };
+
+    // Re-classify ALL products based on live Shopify data
+    const newMissing = [];
+    const newMatched = [];
+
+    for (const p of (S.lastResult.missing||[])) {
+      if (isNowStocked(p)) newMatched.push({ ...p, matchReason: 'now-stocked' });
+      else                 newMissing.push(p);
+    }
+
+    for (const p of (S.lastResult.matched||[])) {
+      if (isNowStocked(p)) newMatched.push(p);
+      else                 newMissing.push({ ...p, matchReason: undefined }); // removed from Shopify
+    }
+
+    const prevMatchedCount = (S.lastResult.matched||[]).length;
+    S.lastResult.missing = newMissing;
+    S.lastResult.matched = newMatched;
+
+    S.selectedProducts.clear();
+    recalcSummary();
+    if (S.lastResult) renderBrandSummary(S.lastResult.summary);
+    applyFilters();
+    refreshDashboard();
+    await persistResultUpdate();
+
+    const added   = newMatched.length - prevMatchedCount;
+    const removed = prevMatchedCount  - newMatched.length;
+    const parts   = [];
+    if (added   > 0) parts.push(`${added} now stocked ✓`);
+    if (removed > 0) parts.push(`${removed} removed from Shopify ↓`);
+    showToast(parts.length ? parts.join(' · ') : 'Up to date — no changes detected');
+
+  } catch(e) {
+    showToast('Refresh failed: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = origHtml; }
+  }
+
+}
+
+
+async function persistResultUpdate() {
+  if (!S.lastResult || !S.currentScanId) return;
+  recalcSummary();
+  try {
+    await api('PUT', `/api/scan-history/${S.currentScanId}`, {
+      result: {
+        missing:        S.lastResult.missing,
+        matched:        S.lastResult.matched,
+        variantGaps:    S.lastResult.variantGaps || [],
+        summary:        S.lastResult.summary,
+        competitorName: S.lastResult.competitorName,
+        competitorUrl:  S.lastResult.competitorUrl,
+        brands:         S.lastResult.brands,
+        scrapedCount:   S.lastResult.scrapedCount,
+      },
+    });
+  } catch(e) {
+    console.warn('[persist] Could not save:', e.message);
+  }
+}
+
+async function refreshWatchlist() {
+  const btn = document.getElementById('refreshWatchlistBtn');
+  if (btn) { btn.disabled = true; btn.innerHTML = btn.innerHTML.replace('Refresh watchlist', 'Checking…'); }
+  try {
+    const items = await api('GET', '/api/watchlist');
+    const watchlistEl = document.getElementById('watchlistGrid');
+    if (watchlistEl) renderWatchlist(items || []);
+    showToast(`Watchlist refreshed — ${(items||[]).length} items`);
+  } catch(e) {
+    showToast('Watchlist refresh failed: ' + e.message, 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = btn.innerHTML.replace('Checking…', 'Refresh watchlist'); }
+  }
+}
+
+function normaliseTitle(str) {
+  return (str||'').toLowerCase().trim().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim();
+}
+
+async function createDrafts() {
+  if (!S.selectedProducts.size) return;
+  const selected = S.lastResult.missing.filter(p => S.selectedProducts.has(p.sourceId || p.handle));
+  if (!selected.length) return;
+
+  const progress = document.getElementById('createDraftsProgress');
+  const msg      = document.getElementById('createDraftsMsg');
+  progress.style.display = '';
+  const uploadStart = Date.now();
+
+  try {
+    const results = { created: [], failed: [] };
+    for (let i = 0; i < selected.length; i++) {
+      const elapsed = ((Date.now() - uploadStart) / 1000).toFixed(0);
+      const pct     = Math.round(((i + 1) / selected.length) * 100);
+      msg.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
+          <strong>${i + 1} / ${selected.length}</strong>
+          <div style="flex:1;background:var(--border);border-radius:99px;height:5px">
+            <div style="background:var(--green);border-radius:99px;height:5px;width:${pct}%;transition:width .3s"></div>
+          </div>
+          <span style="color:var(--text2);font-size:12px">${elapsed}s</span>
+        </div>
+        <div style="font-size:12px;color:var(--text2)">${esc(selected[i].title)}</div>`;
+      try {
+        const r = await api('POST', '/api/create-drafts', { products: [selected[i]] });
+        if (r.created?.length) results.created.push(...r.created);
+        if (r.failed?.length)  results.failed.push(...r.failed);
+      } catch(e) {
+        results.failed.push({ title: selected[i].title, error: e.message });
+      }
+    }
+    const totalTime = ((Date.now() - uploadStart) / 1000).toFixed(1);
+    progress.style.display = 'none';
+
+    S.draftCount += results.created?.length || 0;
+    refreshDashboard();
+
+    const created = results.created?.length || 0;
+    const failed  = results.failed?.length || 0;
+
+    showModal(
+      'Products created',
+      `<div class="alert alert-success"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+       ${created} product${created !== 1 ? 's' : ''} created in Shopify in ${totalTime}s.</div>
+       ${failed ? `<div class="alert alert-warning mt-4"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>${failed} failed.</div>` : ''}
+       <p class="text-sm text-muted mt-4">Review them from your Shopify admin under <strong>Products</strong>.</p>`,
+      [{ label: 'Open Shopify Admin', onclick: `window.open('https://${S.shopInfo?.domain || 'admin.shopify.com'}/admin/products','_blank')`, class: 'btn-primary' },
+       { label: 'Close', onclick: 'closeModal()' }]
+    );
+
+    // Move created products from missing → matched immediately
+    if (created > 0 && S.lastResult) {
+      const createdTitles = new Set((results.created || []).map(c => (c.title||'').toLowerCase()));
+      const nowStocked = [];
+      const stillMissing = [];
+      S.lastResult.missing.forEach(p => {
+        if (S.selectedProducts.has(p.sourceId || p.handle) && createdTitles.has((p.title||'').toLowerCase())) {
+          nowStocked.push({ ...p, matchReason: 'created' });
+        } else {
+          stillMissing.push(p);
+        }
+      });
+      S.lastResult.missing = stillMissing;
+      S.lastResult.matched = [...nowStocked, ...(S.lastResult.matched || [])];
+    }
+
+    S.selectedProducts.clear();
+    updateSelectionBar();
+    recalcSummary();
+    if (S.lastResult) renderBrandSummary(S.lastResult.summary);
+    applyFilters();
+    refreshDashboard();
+    await persistResultUpdate();
+    // Auto-refresh watchlist — newly uploaded products may now be stocked
+    try { await refreshWatchlist(); } catch(_) {}
+
+  } catch(e) {
+    progress.style.display = 'none';
+    showToast('Error creating products: ' + e.message, 'error');
+  }
+}
+
+// ── Excel export ───────────────────────────────────────────────────
+async function exportExcel(all = false) {
+  let products;
+  if (all) {
+    products = S.lastResult?.missing || [];
+  } else {
+    products = (S.lastResult?.missing || []).filter(p => S.selectedProducts.has(p.sourceId || p.handle));
+  }
+  if (!products.length) return showToast('No products to export', 'error');
+
+  try {
+    showToast(`Preparing Excel export for ${products.length} products…`);
+    await apiDownload(
+      '/api/export',
+      { products, competitorName: S.lastResult?.competitorName || 'Competitor' },
+      `missing-products-${Date.now()}.xlsx`
+    );
+    showToast('Excel downloaded ✓');
+  } catch(e) {
+    showToast('Export error: ' + e.message, 'error');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TAGS INPUT (reusable)
+// ═══════════════════════════════════════════════════════════════════
+function setupTagInputs() {
+  setupTagInput('brandTagInput', S.addBrands,  'brandTagsWrap');
+  setupTagInput('scanBrandTagInput', S.scanBrands, 'scanBrandTagsWrap');
+}
+
+function setupTagInput(inputId, arr, wrapId) {
+  const input = document.getElementById(inputId);
+  if (!input) {
+    console.warn(`setupTagInput: element #${inputId} not found`);
+    return;
+  }
+  console.log(`✓ Tag input setup for #${inputId}`);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const val = input.value.trim().replace(/,$/, '');
+      console.log('Tag input:', val);
+      if (val && !arr.includes(val)) {
+        arr.push(val);
+        renderBrandTags(wrapId, arr, inputId);
+        console.log('Tags now:', arr);
+      }
+      input.value = '';
+    } else if (e.key === 'Backspace' && !input.value && arr.length) {
+      arr.pop();
+      renderBrandTags(wrapId, arr, inputId);
+    }
+  });
+}
+
+function renderBrandTags(wrapId, arr, inputId) {
+  const wrap  = document.getElementById(wrapId);
+  const input = document.getElementById(inputId);
+  // Remove existing chips
+  wrap.querySelectorAll('.tag-chip').forEach(el => el.remove());
+  // Re-insert chips before input
+  arr.forEach((tag, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'tag-chip';
+    chip.innerHTML = `${esc(tag)} <button onclick="removeTag('${wrapId}','${inputId}',${i})">×</button>`;
+    wrap.insertBefore(chip, input);
+  });
+}
+
+function removeTag(wrapId, inputId, idx) {
+  // Determine which array
+  if (wrapId === 'brandTagsWrap')    { S.addBrands.splice(idx, 1);  renderBrandTags(wrapId, S.addBrands,  inputId); }
+  if (wrapId === 'scanBrandTagsWrap') { S.scanBrands.splice(idx, 1); renderBrandTags(wrapId, S.scanBrands, inputId); }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MODAL
+// ═══════════════════════════════════════════════════════════════════
+function showModal(title, bodyHtml, buttons = []) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').innerHTML    = bodyHtml;
+  document.getElementById('modal-footer').innerHTML = buttons.map(b =>
+    `<button class="btn ${b.class || 'btn-secondary'}" onclick="${b.onclick}">${esc(b.label)}</button>`
+  ).join('');
+  document.getElementById('modal-overlay').classList.add('open');
+}
+
+function closeModal(e) {
+  if (e && e.target !== document.getElementById('modal-overlay')) return;
+  document.getElementById('modal-overlay').classList.remove('open');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// TOAST
+// ═══════════════════════════════════════════════════════════════════
+let toastTimer;
+function showToast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.background = type === 'error' ? '#7f1d1d' : type === 'warning' ? '#78350f' : '#1a1a2e';
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════════════════════════
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ── Live terminal ─────────────────────────────────────────────────
+let S_logSource = null;
+let S_logLines  = [];
+const MAX_LOG_LINES = 200;
+
+function startLogStream() {
+  if (S_logSource) return; // already connected
+  S_logSource = new EventSource('/api/logs');
+  S_logSource.onmessage = e => {
+    try {
+      const { level, line } = JSON.parse(e.data);
+      appendTerminalLine(line, level);
+    } catch(_) {}
+  };
+  S_logSource.onerror = () => {
+    // Reconnects automatically — SSE handles this
+  };
+}
+
+function stopLogStream() {
+  if (S_logSource) { S_logSource.close(); S_logSource = null; }
+}
+
+function appendTerminalLine(line, level = 'log') {
+  S_logLines.push({ line, level });
+  if (S_logLines.length > MAX_LOG_LINES) S_logLines.shift();
+  renderTerminal();
+}
+
+function renderTerminal() {
+  const el = document.getElementById('liveTerminal');
+  if (!el) return;
+
+  el.innerHTML = S_logLines.map(({ line, level }) => {
+    const cls = level === 'error' ? 'log-error'
+      : line.includes('✅') || line.includes('✓') ? 'log-green'
+      : line.includes('⚠') || line.includes('[Cache]') ? 'log-yellow'
+      : line.includes('━━') || line.includes('🏍️') ? 'log-cyan'
+      : line.includes('  [') ? 'log-line'   // product lines [1/20]
+      : 'log-dim';
+    return `<div class="${cls}">${escTerm(line)}</div>`;
+  }).join('');
+
+  // Auto-scroll to bottom
+  el.scrollTop = el.scrollHeight;
+}
+
+function escTerm(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function clearTerminal() {
+  S_logLines = [];
+  const el = document.getElementById('liveTerminal');
+  if (el) el.innerHTML = '<span style="color:#8b949e">— cleared —</span>';
+}
+
+// Start streaming as soon as page loads so we catch all server logs
+startLogStream();
+
+// Pulse the terminal dot while scanning
+function setTerminalActive(active) {
+  const dot = document.getElementById('termDot');
+  if (dot) dot.className = active ? 'terminal-dot' : 'terminal-dot idle';
+}
+
+// Hook into scan start/stop
+const _origStartScan = typeof startScan === 'function' ? startScan : null;
+
+// ── Shutdown ───────────────────────────────────────────────────────
+async function shutdownApp() {
+  if (!confirm('Stop the Competitor Scout server?')) return;
+  try {
+    await fetch('/api/shutdown', { method: 'POST' });
+    document.body.innerHTML = `<div style="font-family:sans-serif;text-align:center;padding:80px;color:#555">
+      <h2>🏍️ Competitor Scout stopped</h2>
+      <p style="margin-top:12px">You can close this tab.</p>
+    </div>`;
+  } catch(_) {
+    document.body.innerHTML = `<div style="font-family:sans-serif;text-align:center;padding:80px;color:#555">
+      <h2>Server stopped</h2><p>Close this tab.</p>
+    </div>`;
+  }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────
+// Initialize app after DOM is ready
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
+</script>
+</body>
+</html>
