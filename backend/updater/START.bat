@@ -20,7 +20,7 @@ cd /d "%~dp0"
 
 :: Check for and apply updates before launching
 echo  Checking for updates...
-node updater.js
+node backend/updater/updater.js
 if %ERRORLEVEL% NEQ 0 (
     echo  Update check failed - starting anyway...
 )
