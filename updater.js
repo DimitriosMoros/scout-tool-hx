@@ -24,8 +24,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // ── Config ───────────────────────────────────────────────────────────────────
 const GITHUB_USER    = 'DimitriosMoros';
 const GITHUB_REPO    = 'scout-tool-hx';
-const VERSION_URL    = `https://raw.githubusercontent.com/${GITHUB_USER}/${GITHUB_REPO}/main/latest-version.json`;
-
+const VERSION_URL =
+"https://raw.githubusercontent.com/DimitriosMoros/scout-tool-hx/main/latest-version.json";
 // ── Files to PRESERVE across updates (never overwritten) ─────────────────────
 const PRESERVE = [
   'backend/.env',
