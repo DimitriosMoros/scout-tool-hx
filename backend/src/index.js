@@ -152,30 +152,51 @@ async function runScrapeJob(jobId, shop, token, { competitorUrl, competitorName,
 
     let competitorProducts = [];
 
-    if (useCache && competitorId) {
+    // Load existing cached products (always — to merge with new scrape)
+    // Load existing cached products
+    let cachedProducts = [];
+    if (competitorId) {
       const cached = storage.getScrapedProducts(shop, competitorId);
       if (cached.products && cached.products.length) {
-        console.log(`[Cache] Using ${cached.products.length} cached products from ${cached.scrapedAt}`);
-        competitorProducts = cached.products;
-        jobStore.update(jobId, { progress: 44, message: `Loaded ${cached.products.length} products from cache` });
+        cachedProducts = cached.products;
+        console.log(`[Cache] Found ${cachedProducts.length} previously scraped products`);
       }
     }
 
-    if (!competitorProducts.length) {
+    {
+      // Always scrape fresh — pass cached IDs so scraper can skip already-scraped products
+      const cachedIds = new Set(cachedProducts.map(p => p.sourceId || p.handle).filter(Boolean));
       const scrapeOptions = {
         maxProducts: maxProducts || 20,
         maxPages:    maxPages    || 5,
+        skipIds:     useCache ? cachedIds : new Set(), // skip known products when cache enabled
       };
+      if (useCache && cachedIds.size) {
+        console.log(`[Cache] Skip mode — will skip ${cachedIds.size} already-scraped products`);
+      } 
       console.log(`[Scrape] Options: maxProducts=${scrapeOptions.maxProducts}, maxPages=${scrapeOptions.maxPages}`);
 
-      competitorProducts = await scrapeCompetitor(competitorUrl, brands, (msg, pct) => {
+      const freshProducts = await scrapeCompetitor(competitorUrl, brands, (msg, pct) => {
         jobStore.update(jobId, { message: msg, progress: Math.min(pct, 44) });
       }, jobId, scrapeOptions);
 
-      if (!competitorProducts.length) {
+      if (!freshProducts.length && !cachedProducts.length) {
         return jobStore.fail(jobId, 'No products found on competitor site.');
       }
 
+      // Merge: cached products + fresh products, deduped by sourceId/handle
+      const seenIds = new Set();
+      const merged  = [];
+      for (const p of [...cachedProducts, ...freshProducts]) {
+        const key = p.sourceId || p.handle;
+        if (key && seenIds.has(key)) continue;
+        if (key) seenIds.add(key);
+        merged.push(p);
+      }
+
+      competitorProducts = merged;
+      console.log(`[Cache] Merged: ${cachedProducts.length} cached + ${freshProducts.length} fresh = ${merged.length} unique total`);
+      // Save merged results back to cache
       if (competitorId) {
         storage.saveScrapedProducts(shop, competitorId, competitorProducts);
         console.log(`[Cache] Saved ${competitorProducts.length} products to cache`);

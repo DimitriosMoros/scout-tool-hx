@@ -670,10 +670,10 @@ tr:hover td { background: var(--surface2); }
 
               <div class="field">
                 <label class="checkbox-label">
-                  <input type="checkbox" id="useCacheCheckbox" checked/>
+                  <input type="checkbox" id="useCacheCheckbox"  />
                   <span>Use cached data if available (faster, saves credits)</span>
                 </label>
-                <div class="hint">If unchecked, will always scrape fresh data</div>
+                <div class="hint">Unchecked: scrapes fresh and merges with cached results — builds up total over multiple scans. Checked: skips scraping, uses cached only.</div>
               </div>
 
               <div class="grid-2" style="gap:16px;margin-bottom:16px">
@@ -1232,9 +1232,8 @@ async function startScan() {
   document.getElementById('scanProgress').style.display = '';
   document.getElementById('scanDone').style.display    = 'none';
   updateScanProgress({ progress: 0, message: 'Starting…', status: 'scraping' });
-  clearTerminal();
   setTerminalActive(true);
-  appendTerminalLine('Starting scan…', 'log');
+  renderTerminal(); // flush buffered logs into now-visible terminal
 
   try {
     const { jobId } = await api('POST', '/api/scrape', {
@@ -2305,10 +2304,64 @@ function normaliseTitle(str) {
   return (str||'').toLowerCase().trim().replace(/[^a-z0-9\s]/g,'').replace(/\s+/g,' ').trim();
 }
 
+function showConfirmDialog(title, bodyHtml, buttons) {
+  return new Promise(resolve => {
+    document.getElementById('modal-title').textContent = title;
+    document.getElementById('modal-body').innerHTML = bodyHtml;
+    document.getElementById('modal-footer').innerHTML = buttons.map(b =>
+      `<button class="btn ${b.class||'btn-secondary'}" id="confirm-btn-${b.value}">${esc(b.label)}</button>`
+    ).join('');
+    buttons.forEach(b => {
+      document.getElementById(`confirm-btn-${b.value}`)
+        ?.addEventListener('click', () => {
+          document.getElementById('modal-overlay').classList.remove('open');
+          resolve(b.value);
+        });
+    });
+    document.getElementById('modal-overlay').classList.add('open');
+  });
+}
+
+function deselectPartialStock() {
+  if (!S.lastResult) return;
+  const partial = [...S.selectedProducts].filter(id => {
+    const p = S.lastResult.missing.find(x => (x.sourceId||x.handle) === id);
+    if (!p) return false;
+    const variants = p.variants || [];
+    return variants.some(v => v.available === false || v.available === 0);
+  });
+  partial.forEach(id => S.selectedProducts.delete(id));
+  applyFilters(); updateSelectionBar();
+  showToast('Deselected all partially stocked products');
+}
+
 async function createDrafts() {
   if (!S.selectedProducts.size) return;
   const selected = S.lastResult.missing.filter(p => S.selectedProducts.has(p.sourceId || p.handle));
   if (!selected.length) return;
+
+  const partial = selected.filter(p => {
+  const variants = p.variants || [];
+  return variants.some(v => v.available === false || v.available === 0) &&
+         variants.some(v => v.available !== false && v.available !== 0);
+});
+if (partial.length > 0) {
+  const answer = await showConfirmDialog(
+    'Partial stock warning',
+    `<p style="margin:0 0 10px"><strong>${partial.length} product${partial.length!==1?'s':''}</strong> have missing or unavailable sizes:</p>
+    <ul style="margin:0 0 10px;padding-left:20px;font-size:13px;color:var(--text2)">
+      ${partial.map(p => `<li>${esc(p.title)}</li>`).join('')}
+    </ul>
+    <p style="margin:0;font-size:13px">These will be created with only the available sizes.</p>`,
+    [
+      { label: 'Upload anyway',          value: 'upload',   class: 'btn-primary' },
+      { label: 'Deselect partial stock', value: 'deselect', class: 'btn-secondary' },
+      { label: 'Cancel',                 value: 'cancel',   class: 'btn-ghost' },
+    ]
+  );
+  if (!answer || answer === 'cancel') return;
+  if (answer === 'deselect') { deselectPartialStock(); return; }
+}
 
   const progress = document.getElementById('createDraftsProgress');
   const msg      = document.getElementById('createDraftsMsg');
@@ -2504,7 +2557,7 @@ function esc(s) {
 // ── Live terminal ─────────────────────────────────────────────────
 let S_logSource = null;
 let S_logLines  = [];
-const MAX_LOG_LINES = 200;
+const MAX_LOG_LINES = 5000;
 
 function startLogStream() {
   if (S_logSource) return; // already connected
