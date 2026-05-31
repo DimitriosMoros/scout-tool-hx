@@ -61,16 +61,13 @@ export function gapAnalysis(competitorProducts, hostProducts, brands = []) {
   }
 
   // Summary per brand — case-insensitive deduplication
-  // Normalise all vendor names to their "best" form (prefer title-case from scraped data)
-  const vendorMap = {}; // lowercase → canonical form
+  const vendorMap = {};
   for (const p of competitorProducts) {
     const v = (p.vendor || '').trim();
     if (!v) continue;
     const key = v.toLowerCase();
-    // Prefer the scraped vendor name (e.g. "Shoei") over filter input (e.g. "shoei")
     if (!vendorMap[key]) vendorMap[key] = v;
   }
-  // Add brands filter as fallback if not already in map
   for (const b of (brands || [])) {
     const key = b.toLowerCase();
     if (!vendorMap[key]) vendorMap[key] = b;
@@ -85,17 +82,11 @@ export function gapAnalysis(competitorProducts, hostProducts, brands = []) {
     };
   }
 
-  // Variant gap detection disabled until selectedOptions confirmed working
-  // const variantGaps = matched.filter(p => p.hasVariantGap);
   const variantGaps = [];
 
   return { missing, matched, summary, variantGaps };
 }
 
-/**
- * Find sizes the competitor has that the host product doesn't stock.
- * Returns array of { size, sku, price, available } for missing sizes.
- */
 function findMissingSizes(competitorProduct, hostProduct) {
   if (!hostProduct) return [];
 
@@ -104,33 +95,26 @@ function findMissingSizes(competitorProduct, hostProduct) {
 
   if (!cpVariants.length || !hostVariants.length) return [];
 
-  // Build set of normalised size labels from host variants
-  // Host variants from Shopify GraphQL have option1 (added in shopify.js normaliseGraphQLProduct)
-  // Competitor variants have v.size (from scraper)
   const hostSizes = new Set(
     hostVariants
       .map(v => normalise(v.option1 || v.size || v.title || ''))
       .filter(s => s && s !== 'default title' && s !== 'default')
   );
 
-  // DEBUG: log first product comparison
   if (process.env.NODE_ENV !== 'production') {
     console.log(`[VariantGap] "${competitorProduct.title}"`);
     console.log(`  Host sizes:       ${[...hostSizes].join(', ') || '(none)'}`);
     console.log(`  Competitor sizes: ${cpVariants.map(v => normalise(v.option1||v.size||'')).join(', ')}`);
   }
 
-  // Also build set of host SKUs for cross-reference
   const hostSkus = new Set(
     hostVariants.map(v => (v.sku || '').toLowerCase().trim()).filter(Boolean)
   );
 
-  // Find competitor variants whose size isn't in host AND whose SKU isn't in host
   const missing = cpVariants.filter(v => {
     const size = normalise(v.option1 || v.size || v.title || '');
     const sku  = (v.sku || '').toLowerCase().trim();
     if (!size || size === 'default' || size === 'default title') return false;
-    // Skip if host already has this size or SKU
     if (size && hostSizes.has(size)) return false;
     if (sku  && hostSkus.has(sku))   return false;
     return true;
@@ -153,7 +137,7 @@ function normalise(str) {
   return (str || '')
     .toLowerCase()
     .trim()
-    .replace(/[^a-z0-9\s]/g, '')   // strip punctuation, dashes, slashes
-    .replace(/\s+/g, ' ')           // collapse whitespace
+    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/\s+/g, ' ')
     .trim();
 }

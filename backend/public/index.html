@@ -2361,6 +2361,35 @@ if (partial.length > 0) {
   );
   if (!answer || answer === 'cancel') return;
   if (answer === 'deselect') { deselectPartialStock(); return; }
+  // Warn about missing SKUs
+  const missingSku = selected.filter(p =>
+    (p.variants || []).some(v => !v.sku || !String(v.sku).trim())
+  );
+  if (missingSku.length > 0) {
+    const answer = await showConfirmDialog(
+      'Missing SKUs detected',
+      `<p style="margin:0 0 10px"><strong>${missingSku.length} product${missingSku.length!==1?'s':''}</strong> have variants with no SKU:</p>
+      <ul style="margin:0 0 12px;padding-left:20px;font-size:13px;color:var(--text2)">
+        ${missingSku.map(p => {
+          const empty = (p.variants||[]).filter(v => !v.sku||!String(v.sku).trim()).map(v=>v.size||v.option1||'?').join(', ');
+          return `<li>${esc(p.title)} <span style="color:var(--red);font-size:12px">(${esc(empty)})</span></li>`;
+        }).join('')}
+      </ul>
+      <p style="margin:0;font-size:12px;color:var(--text2)">Products can still be created — variants without SKUs won't have inventory tracking until added manually in Shopify.</p>`,
+      [
+        { label: 'Upload anyway',         value: 'upload',   class: 'btn-primary' },
+        { label: 'Deselect missing SKUs', value: 'deselect', class: 'btn-secondary' },
+        { label: 'Cancel',                value: 'cancel',   class: 'btn-ghost' },
+      ]
+    );
+    if (!answer || answer === 'cancel') return;
+    if (answer === 'deselect') {
+      missingSku.forEach(p => S.selectedProducts.delete(p.sourceId || p.handle));
+      applyFilters(); updateSelectionBar();
+      showToast('Deselected products with missing SKUs');
+      return;
+    }
+  }
 }
 
   const progress = document.getElementById('createDraftsProgress');

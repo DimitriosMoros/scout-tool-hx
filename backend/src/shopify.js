@@ -222,6 +222,11 @@ export async function createDraftProducts(shop, token, products) {
   for (const product of products) {
     try {
       const payload = buildShopifyPayload(product);
+      if (!payload) {
+        console.log(`[Draft] Skipped: "${product.title}" — no variants with SKUs`);
+        results.failed.push({ title: product.title, error: 'No variants with SKUs — all sizes were unavailable' });
+        continue;
+      }
       console.log(`[Draft] Creating: "${product.title}" — ${payload.variants.length} variant(s), vendor: "${payload.vendor}"`);
       const data = await shopifyRequest(shop, token, 'POST', 'products.json', { product: payload });
       const productId = data.product.id;
@@ -295,9 +300,15 @@ async function publishToAllChannels(shop, token, productId) {
 function cleanDescription(html) {
   if (!html) return '';
   let c = html;
-  c = c.replace(/(<h[1-6][^>]*>\s*)?Shop\s+Now\s+at\s+AMX[\s\S]*/gi, '');
+
+  // Remove everything from ANY "Shop X at AMX" heading/paragraph onwards
+  c = c.replace(/(<h[1-6][^>]*>\s*)?Shop\s+[\w\s]+at\s+AMX[\s\S]*/gi, '');
   c = c.replace(/(<h[1-6][^>]*>\s*)?About\s+AMX[\s\S]*/gi, '');
-  c = c.replace(/<(?:p|div)[^>]*>[\s\S]*?(?:shop\s+now\s+at\s+amx|amx\s+never\s+fails|amx\s+delivers)[\s\S]*?<\/(?:p|div)>/gi, '');
+
+  // Remove any paragraph/div containing AMX mentions
+  c = c.replace(/<(?:p|div)[^>]*>[^<]*(?:amx\s+superstores?|shop\s+now\s+at\s+amx|amx\s+never\s+fails|amx\s+delivers|store\s+locations?[^<]*(?:queensland|victoria|new\s+south\s+wales)|click\s+&amp;\s+collect)[^<]*<\/(?:p|div)>/gi, '');
+
+  // Strip all anchor tags but keep link text
   c = c.replace(/<a[^>]*>([\s\S]*?)<\/a>/gi, '$1');
   c = c.replace(/https?:\/\/[^\s"<)'\]]+/gi, '');
   c = c.replace(/www\.[a-zA-Z0-9][^\s"<)'\]]+/gi, '');
@@ -319,6 +330,17 @@ function buildShopifyPayload(product) {
   const seen = new Set();
 
   const variants = rawVariants
+    .filter(v => {
+      // Skip variants with no SKU — unavailable variants on AMX don't expose
+      // their part number so we can't track inventory for them
+      const sku = (v.sku || '').trim();
+      if (!sku) {
+        const size = (v.option1 || v.size || 'unknown').toString().trim();
+        console.log(`  [Shopify] Skipping variant "${size}" — no SKU`);
+        return false;
+      }
+      return true;
+    })
     .map(v => {
       const size  = (v.option1 || v.size || '').toString().trim();
       const price = parseFloat(v.price || 0);
@@ -343,11 +365,18 @@ function buildShopifyPayload(product) {
       return variant;
     })
     .filter(v => {
+      // Deduplicate by option1
       const key = v.option1 || '__default__';
       if (seen.has(key)) return false;
       seen.add(key);
       return true;
     });
+
+  // If every variant was filtered (all had no SKU), skip this product entirely
+  if (!variants.length) {
+    console.log(`  [Shopify] Skipping product "${product.title}" — no variants with SKUs`);
+    return null;
+  }
 
   const hasSizes = variants.some(v => v.option1);
 
