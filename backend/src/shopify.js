@@ -166,14 +166,14 @@ export async function getShopifyProducts(shop, token, { vendor, vendors } = {}) 
       }`;
 
       const activeToken = await getToken(shop) || token;
-      const r = await fetch(`https://${shop}/admin/api/${API_VERSION}/graphql.json`, {
+      const r = await fetchWithTimeout(`https://${shop}/admin/api/${API_VERSION}/graphql.json`, {
         method: 'POST',
         headers: {
           'X-Shopify-Access-Token': activeToken,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ query: gql }),
-      });
+      }, 25000);
 
       if (!r.ok) throw new Error(`Shopify GraphQL ${r.status}`);
       const data = await r.json();
@@ -301,9 +301,13 @@ function cleanDescription(html) {
   if (!html) return '';
   let c = html;
 
-  // Remove everything from ANY "Shop X at AMX" heading/paragraph onwards
-  c = c.replace(/(<h[1-6][^>]*>\s*)?Shop\s+[\w\s]+at\s+AMX[\s\S]*/gi, '');
+  // Remove everything from "Shop/Purchase X at AMX" heading onwards
+  c = c.replace(/<[^>]+>[^<]*(?:Shop|Purchase)\s+[\w\s]+at\s+AMX[^<]*<\/[^>]+>[\s\S]*/gi, '');
+  c = c.replace(/(?:Shop|Purchase)\s+[\w\s]+at\s+AMX[\s\S]*/gi, '');
   c = c.replace(/(<h[1-6][^>]*>\s*)?About\s+AMX[\s\S]*/gi, '');
+  // Remove "About Quad Lock" / "About [Brand]" sections written by AMX
+  c = c.replace(/<h[1-6][^>]*>\s*About\s+Quad\s+Lock\s*<\/h[1-6]>[\s\S]*/gi, '');
+  c = c.replace(/<h[1-6][^>]*>\s*About\s+[A-Z][\w\s]+<\/h[1-6]>[\s\S]{0,3000}AMX[\s\S]*/gi, '');
 
   // Remove any paragraph/div containing AMX mentions
   c = c.replace(/<(?:p|div)[^>]*>[^<]*(?:amx\s+superstores?|shop\s+now\s+at\s+amx|amx\s+never\s+fails|amx\s+delivers|store\s+locations?[^<]*(?:queensland|victoria|new\s+south\s+wales)|click\s+&amp;\s+collect)[^<]*<\/(?:p|div)>/gi, '');
@@ -405,7 +409,11 @@ function buildShopifyPayload(product) {
   return {
     title:           String(product.title || 'Untitled').trim(),
     body_html:       cleanDescription(product.description || ''),
-    vendor:          String(product.vendor || '').trim(),
+    vendor:          (() => {
+      const v = String(product.vendor || '').trim();
+      const VENDOR_ALIASES = { 'quad': 'Quadlock', 'quad lock': 'Quadlock' };
+      return VENDOR_ALIASES[v.toLowerCase()] || v;
+    })(),
     product_type:    String(product.productType || '').trim(),
     tags,
     status:          'active',
@@ -417,3 +425,14 @@ function buildShopifyPayload(product) {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+async function fetchWithTimeout(url, opts, timeoutMs = 30000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const r = await fetch(url, { ...opts, signal: controller.signal });
+    return r;
+  } finally {
+    clearTimeout(timer);
+  }
+}

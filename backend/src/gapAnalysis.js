@@ -33,6 +33,9 @@ export function gapAnalysis(competitorProducts, hostProducts, brands = []) {
     const cpSkus     = (cp.variants || []).map(v => (v.sku || '').toLowerCase().trim()).filter(Boolean);
     const cpBarcodes = (cp.variants || []).map(v => (v.barcode || '').toLowerCase().trim()).filter(Boolean);
 
+    // Normalise competitor vendor through alias map before comparison
+    const normVendor = cp.vendor ? (VENDOR_ALIASES[cp.vendor.toLowerCase().trim()] || cp.vendor) : cp.vendor;
+
     const matchedBySku     = cpSkus.some(s => s && hostSkus.has(s));
     const matchedByBarcode = cpBarcodes.some(b => b && hostBarcodes.has(b));
     const matchedByHandle  = handle && hostHandles.has(handle);
@@ -49,7 +52,7 @@ export function gapAnalysis(competitorProducts, hostProducts, brands = []) {
     } else {
       // Brand filter — only include if product belongs to a watched brand
       if (brands.length > 0) {
-        const cpVendor = (cp.vendor || '').toLowerCase();
+        const cpVendor = (normVendor || cp.vendor || '').toLowerCase();
         const cpTitle  = (cp.title  || '').toLowerCase();
         const brandMatch = brands.some(b =>
           cpVendor.includes(b.toLowerCase()) || cpTitle.startsWith(b.toLowerCase())
@@ -65,20 +68,21 @@ export function gapAnalysis(competitorProducts, hostProducts, brands = []) {
   for (const p of competitorProducts) {
     const v = (p.vendor || '').trim();
     if (!v) continue;
-    const key = v.toLowerCase();
-    if (!vendorMap[key]) vendorMap[key] = v;
+    const aliased = VENDOR_ALIASES[v.toLowerCase()] || v;
+    const key = aliased.toLowerCase();
+    if (!vendorMap[key]) vendorMap[key] = aliased;
   }
   for (const b of (brands || [])) {
-    const key = b.toLowerCase();
-    if (!vendorMap[key]) vendorMap[key] = b;
+    const key = normaliseVendor(b);
+    if (!vendorMap[key]) vendorMap[key] = VENDOR_ALIASES[b.toLowerCase()] || b;
   }
 
   const summary = {};
   for (const [bLower, canonical] of Object.entries(vendorMap)) {
     summary[canonical] = {
-      total:   competitorProducts.filter(p => (p.vendor || '').toLowerCase() === bLower).length,
-      missing: missing.filter(p => (p.vendor || '').toLowerCase() === bLower).length,
-      matched: matched.filter(p => (p.vendor || '').toLowerCase() === bLower).length,
+      total:   competitorProducts.filter(p => (VENDOR_ALIASES[(p.vendor||'').toLowerCase()]||p.vendor||'').toLowerCase() === bLower).length,
+      missing: missing.filter(p => (VENDOR_ALIASES[(p.vendor||'').toLowerCase()]||p.vendor||'').toLowerCase() === bLower).length,
+      matched: matched.filter(p => (VENDOR_ALIASES[(p.vendor||'').toLowerCase()]||p.vendor||'').toLowerCase() === bLower).length,
     };
   }
 
@@ -133,6 +137,18 @@ function findMissingSizes(competitorProduct, hostProduct) {
  * lowercase, trim, strip punctuation/special chars, collapse spaces.
  * "Shoei X-SPR Pro Helmet – Proxy TC-11" → "shoei xspr pro helmet proxy tc11"
  */
+// Vendor aliases — maps competitor vendor names to your Shopify vendor names
+// Add more entries here as you discover mismatches
+const VENDOR_ALIASES = {
+  'quad':      'quadlock',
+  'quad lock': 'quadlock',
+};
+
+function normaliseVendor(vendor) {
+  const v = (vendor || '').toLowerCase().trim();
+  return VENDOR_ALIASES[v] || v;
+}
+
 function normalise(str) {
   return (str || '')
     .toLowerCase()

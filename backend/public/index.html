@@ -2204,8 +2204,9 @@ async function recheckAgainstShopify() {
     const hostProds = [];
     for (const v of vendors) {
       try {
-        const hp = await api('GET', `/api/host-products?vendor=${encodeURIComponent(v)}`);
-        hostProds.push(...(hp.products || []));
+    const VENDOR_ALIASES = { 'quad': 'Quadlock', 'quad lock': 'Quadlock' };
+    const aliasedV = VENDOR_ALIASES[v.toLowerCase()] || v;
+    try { const hp = await api('GET', `/api/host-products?vendor=${encodeURIComponent(aliasedV)}`); hostProds.push(...(hp.products||[])); } catch(_) {}        hostProds.push(...(hp.products || []));
       } catch(_) {}
     }
 

@@ -153,28 +153,29 @@ async function runScrapeJob(jobId, shop, token, { competitorUrl, competitorName,
     let competitorProducts = [];
 
     // Load existing cached products (always — to merge with new scrape)
-    // Load existing cached products
     let cachedProducts = [];
     if (competitorId) {
       const cached = storage.getScrapedProducts(shop, competitorId);
       if (cached.products && cached.products.length) {
         cachedProducts = cached.products;
-        console.log(`[Cache] Found ${cachedProducts.length} previously scraped products`);
+        console.log(`[Cache] Found ${cachedProducts.length} previously scraped products from ${cached.scrapedAt}`);
       }
     }
 
-    {
-      // Always scrape fresh — pass cached IDs so scraper can skip already-scraped products
+{
+      // Build set of already-scraped IDs to skip when cache is enabled
       const cachedIds = new Set(cachedProducts.map(p => p.sourceId || p.handle).filter(Boolean));
+
+      if (useCache && cachedIds.size) {
+        console.log(`[Cache] Continuation mode — skipping ${cachedIds.size} already-scraped products, scraping next ${maxProducts || 20} new ones`);
+      }
+
       const scrapeOptions = {
         maxProducts: maxProducts || 20,
         maxPages:    maxPages    || 5,
-        skipIds:     useCache ? cachedIds : new Set(), // skip known products when cache enabled
+        skipIds:     useCache && cachedIds.size ? cachedIds : new Set(),
       };
-      if (useCache && cachedIds.size) {
-        console.log(`[Cache] Skip mode — will skip ${cachedIds.size} already-scraped products`);
-      } 
-      console.log(`[Scrape] Options: maxProducts=${scrapeOptions.maxProducts}, maxPages=${scrapeOptions.maxPages}`);
+      console.log(`[Scrape] Options: maxProducts=${scrapeOptions.maxProducts}, maxPages=${scrapeOptions.maxPages}, skipIds=${scrapeOptions.skipIds.size}`);
 
       const freshProducts = await scrapeCompetitor(competitorUrl, brands, (msg, pct) => {
         jobStore.update(jobId, { message: msg, progress: Math.min(pct, 44) });
@@ -195,7 +196,8 @@ async function runScrapeJob(jobId, shop, token, { competitorUrl, competitorName,
       }
 
       competitorProducts = merged;
-      console.log(`[Cache] Merged: ${cachedProducts.length} cached + ${freshProducts.length} fresh = ${merged.length} unique total`);
+      console.log(`[Cache] Merged: ${cachedProducts.length} cached + ${freshProducts.length} fresh = ${merged.length} total (${merged.length - cachedProducts.length - freshProducts.length + (merged.length)} unique)`);
+
       // Save merged results back to cache
       if (competitorId) {
         storage.saveScrapedProducts(shop, competitorId, competitorProducts);
@@ -215,8 +217,16 @@ async function runScrapeJob(jobId, shop, token, { competitorUrl, competitorName,
 
     // ── Fetch ONLY the vendors present in scraped products from Shopify ─────
     // This ensures we never pull the whole catalogue — only specific vendors
+    // Apply vendor aliases so we fetch "Quadlock" not "Quad" from Shopify
+    const VENDOR_ALIASES = {
+      'quad':      'Quadlock',
+      'quad lock': 'Quadlock',
+    };
     const scrapedVendors = [...new Set(
-      competitorProducts.map(p => p.vendor).filter(Boolean)
+      competitorProducts.map(p => {
+        const v = (p.vendor || '').trim();
+        return VENDOR_ALIASES[v.toLowerCase()] || v;
+      }).filter(Boolean)
     )];
     const vendorsToFetch = scrapedVendors.length > 0 ? scrapedVendors
       : (brands && brands.length ? brands : null);
