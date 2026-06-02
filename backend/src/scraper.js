@@ -98,7 +98,8 @@ export async function scrapeCompetitor(url, brands = [], onProgress = () => {}, 
   if (url.includes('amxsuperstores.com.au')) {
     console.log('[scraper] AMX detected — using dedicated scraper');
     onProgress('AMX detected - using optimized scraper...', 8);
-    const products = await scrapeAMX(url, brands, onProgress, jobId, options);    
+    const products = await scrapeAMX(url, brands, onProgress, jobId, options);
+    
     if (!products.length) {
       throw new Error('No AMX products found. Check brand filters or ScraperAPI credits.');
     }
