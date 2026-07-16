@@ -1,11 +1,12 @@
 {
   "name": "competitor-scout",
-  "version": "1.0.4",
+  "version": "1.2.0",
   "type": "module",
   "main": "backend/src/index.js",
   "scripts": {
     "start": "cd backend && node src/index.js",
-    "dev": "cd backend && node --watch src/index.js",
+    "dev": "cd backend && node src/index.js",
+    "dev:watch": "cd backend && node --watch src/index.js",
     "kill": "npx kill-port 3001",
     "fresh": "npx kill-port 3001 && cd backend && node src/index.js"
   },

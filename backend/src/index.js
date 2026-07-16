@@ -1,12 +1,15 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { scrapeCompetitor } from './scraper.js';
 import { gapAnalysis } from './gapAnalysis.js';
 import { createDraftProducts, getShopifyProducts, getToken, initToken } from './shopify.js';
 import { exportToExcel } from './excelExport.js';
+import { MOTO_MAKES } from './utils.js';
 import { jobStore } from './jobStore.js';
 import * as storage from './storage.js';
 
@@ -205,15 +208,21 @@ async function runScrapeJob(jobId, shop, token, { competitorUrl, competitorName,
       }
     }
 
-    // Tag all scraped products
-    competitorProducts = competitorProducts.map(p => ({
-      ...p,
-      tags: [...new Set(
-        [p.tags, 'Scraped', competitorName]
-          .flatMap(t => (t || '').split(',').map(s => s.trim()))
-          .filter(Boolean)
-      )].join(', '),
-    }));
+    // Tag all scraped products.
+    // "Scraped" marks every competitor product for Shopify collection/automation.
+    // "Site_bikebiz" (etc.) uses the reliable sourcePlatform field — not the
+    // user-typed competitor name which can contain typos or arbitrary text.
+    competitorProducts = competitorProducts.map(p => {
+      const siteTag = p.sourcePlatform ? `Site_${p.sourcePlatform}` : null;
+      return {
+        ...p,
+        tags: [...new Set(
+          [p.tags, 'Scraped', siteTag]
+            .flatMap(t => (t || '').split(',').map(s => s.trim()))
+            .filter(Boolean)
+        )].join(', '),
+      };
+    });
 
     // ── Fetch ONLY the vendors present in scraped products from Shopify ─────
     // This ensures we never pull the whole catalogue — only specific vendors
@@ -228,7 +237,21 @@ async function runScrapeJob(jobId, shop, token, { competitorUrl, competitorName,
         return VENDOR_ALIASES[v.toLowerCase()] || v;
       }).filter(Boolean)
     )];
-    const vendorsToFetch = scrapedVendors.length > 0 ? scrapedVendors
+
+    // Fitment accessories are often filed in the host store under the bike
+    // make rather than the accessory brand (e.g. Evotech bobbins stored with
+    // vendor "Yamaha"). Fetch any makes mentioned in scraped titles too, so
+    // SKU/title matching can see those products.
+    const makeVendors = [...new Set(
+      competitorProducts.flatMap(p => MOTO_MAKES.filter(m => {
+        const escaped = m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/-/g, '[\\-\\s]');
+        return new RegExp(`\\b${escaped}\\b`, 'i').test(p.title || '');
+      }))
+    )];
+    if (makeVendors.length) console.log(`[Compare] Bike makes in titles — also fetching vendors: ${makeVendors.join(', ')}`);
+
+    const allVendors = [...new Set([...scrapedVendors, ...makeVendors])];
+    const vendorsToFetch = allVendors.length > 0 ? allVendors
       : (brands && brands.length ? brands : null);
 
     if (!vendorsToFetch || !vendorsToFetch.length) {
@@ -391,13 +414,21 @@ app.get('/api/watchlist/download', requireAuth, (req, res) => {
 });
 
 app.post('/api/rescrape-product', requireAuth, async (req, res) => {
-  const { url } = req.body;
+  const { url, sourceId } = req.body;
   if (!url) return res.status(400).json({ error: 'url required' });
   try {
-    const { scrapeAMX } = await import('./amxScraper.js');
-    const products = await scrapeAMX(url, [], () => {}, null, { maxProducts: 1, maxPages: 1 });
+    let products;
+    if (/bikebiz\.com\.au/i.test(url)) {
+      const { scrapeBikebizProduct } = await import('./bikebizScraper.js');
+      products = await scrapeBikebizProduct(url);
+    } else {
+      const { scrapeAMX } = await import('./amxScraper.js');
+      products = await scrapeAMX(url, [], () => {}, null, { maxProducts: 1, maxPages: 1 });
+    }
     if (!products.length) return res.status(404).json({ error: 'Product not found or could not be scraped' });
-    res.json({ product: products[0] });
+    // Colour-bundled pages share one URL — pick the colour this watchlist item tracks
+    const product = (sourceId && products.find(p => p.sourceId === sourceId)) || products[0];
+    res.json({ product });
   } catch (err) {
     console.error('[Rescrape] Error:', err.message);
     res.status(500).json({ error: err.message });
@@ -442,12 +473,26 @@ app.post('/api/shutdown', (req, res) => {
 });
 
 const PORT   = process.env.PORT || 3001;
+
+// Open the browser only on a fresh launch — not when the server restarts
+// (e.g. watch mode reacting to OneDrive touching files), which would keep
+// opening extra tabs. Marker lives in the OS temp dir so it is never synced.
+const LAUNCH_MARKER = path.join(os.tmpdir(), 'competitor-scout.last-launch');
+function shouldOpenBrowser() {
+  try {
+    const last = Number(fs.readFileSync(LAUNCH_MARKER, 'utf8'));
+    if (Date.now() - last < 2 * 60 * 1000) return false;
+  } catch (_) {}
+  try { fs.writeFileSync(LAUNCH_MARKER, String(Date.now())); } catch (_) {}
+  return true;
+}
+
 const server = app.listen(PORT, async () => {
   console.log(`\n  Competitor Scout running`);
   console.log(`  Shop : ${SHOP}`);
   console.log(`  Open : http://localhost:${PORT}\n`);
   await initToken(SHOP);
-  if (process.platform === 'win32') {
+  if (process.platform === 'win32' && shouldOpenBrowser()) {
     import('child_process').then(({ exec }) => exec(`start http://localhost:${PORT}`));
   }
 });

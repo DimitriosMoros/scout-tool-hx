@@ -9,10 +9,12 @@ import axios from 'axios';
 import * as cheerio from 'cheerio';
 import pLimit from 'p-limit';
 import { inferProductType, generateTags } from './utils.js';
-import { scrapeAMX }  from './amxScraper.js';
-import { scrapeMCAS }       from './mcasScraper.js';
-import { scrapeMotoheaven } from './motoheavenScraper.js';
-import { scrapeBikebiz }    from './bikebizScraper.js';
+import { scrapeAMX }         from './amxScraper.js';
+import { scrapeMCAS }        from './mcasScraper.js';
+import { scrapeMotoheaven }  from './motoheavenScraper.js';
+import { scrapeBikebiz }     from './bikebizScraper.js';
+import { scrapeHurtlegear }  from './hurtlegearScraper.js';
+import { scrapeGeneric }     from './genericScraper.js';
 
 const CONCURRENCY = 3;
 const lim = pLimit(CONCURRENCY);
@@ -151,8 +153,22 @@ export async function scrapeCompetitor(url, brands = [], onProgress = () => {}, 
     }));
   }
 
-  // For non-AMX, non-MCAS sites, normalize to base domain
+  // Hurtle Gear (Neto/Maropost platform)
+  if (url.includes('hurtlegear.com.au')) {
+    console.log('[scraper] Hurtle Gear detected — using dedicated scraper');
+    onProgress('Hurtle Gear detected - using dedicated scraper...', 8);
+    const products = await scrapeHurtlegear(url, brands, onProgress, jobId, options);
+    if (!products.length) throw new Error('No Hurtle Gear products found. Check URL and brand filters.');
+    return products.map(p => ({
+      ...p,
+      tags: generateTags(p, p.vendor || guessBrand(p.title, brands)),
+      productType: p.productType || inferProductType(p.title, p.description || ''),
+    }));
+  }
+
+  // For non-specific sites, detect platform then scrape generically
   const baseUrl = normaliseUrl(url);
+  const platform = await detectPlatform(baseUrl, onProgress);
   onProgress(`Platform: ${platform}`, 12);
   console.log(`[scraper] ${baseUrl} → ${platform}`);
 
@@ -180,7 +196,7 @@ export async function scrapeCompetitor(url, brands = [], onProgress = () => {}, 
       break;
 
     default:
-      products = await scrapeGenericSite(baseUrl, brands, onProgress);
+      products = await scrapeGeneric(baseUrl, brands, onProgress, jobId, options);
   }
 
   if (!products.length) {

@@ -3,26 +3,75 @@
  * Compares competitor products against the host's Shopify catalogue.
  *
  * Matching priority:
- *  1. SKU match          — most reliable
- *  2. Barcode match      — reliable
- *  3. Handle match       — reliable (URL slug)
- *  4. Exact title match  — normalised but exact, NO fuzzy
- *
- * Fuzzy title matching has been intentionally removed.
- * Helmet/apparel names are too similar (same brand, model, series)
- * for fuzzy matching to work — it causes false "Already stocked" results.
+ *  1. SKU match          — exact, most reliable
+ *  2. SKU prefix match   — one SKU starts with the other (handles "PRN002406" vs "PRN002406-002408-52")
+ *  3. Barcode match      — exact
+ *  4. Handle match       — URL slug, exact normalised
+ *  5. Exact title match  — normalised, exact
+ *  6. Soft title match   — 75%+ significant-word overlap + model numbers must agree
+ *                          Prevents "Monster 821" matching "Monster 950" while catching
+ *                          phrasing differences like "Lever Set To Suit Ducati 1260" vs
+ *                          "Ducati 1260 Folding Levers".
  */
+
+// Words that carry no product identity — excluded from the soft-match word set.
+const SOFT_STOP = new Set([
+  'the','a','an','to','and','or','for','in','with','of','by','at','on',
+  'suit','fits','compatible','inc','including','set','pair','via','per',
+  'new','genuine','oem','aftermarket','replacement','universal',
+]);
+
+// Pre-process a title into the sets needed for soft matching.
+function titleTokens(str) {
+  const n    = normalise(str);
+  const nums = new Set((n.match(/\d{3,}/g) || [])); // 3+ digit numbers (model numbers, years)
+  const words = new Set(n.split(' ').filter(w => w.length > 2 && !SOFT_STOP.has(w)));
+  return { nums, words };
+}
+
+// Returns true when two titles plausibly refer to the same product.
+// Rules:
+//  - Both titles must contribute at least 3 significant words
+//  - Any 3+-digit numbers appearing in the shorter title must ALL appear in the longer
+//    (prevents "1260" matching "1290", "821" matching "950")
+//  - ≥75% of the shorter title's significant words must appear in the longer title
+function softTitleMatch(cpTitle, hostTokensList) {
+  const cp = titleTokens(cpTitle);
+  if (cp.words.size < 3) return false;
+
+  for (const ht of hostTokensList) {
+    if (ht.words.size < 3) continue;
+
+    // Number constraint — model numbers must agree
+    if (cp.nums.size > 0 && ht.nums.size > 0) {
+      const smaller = cp.nums.size <= ht.nums.size ? cp.nums : ht.nums;
+      const larger  = cp.nums.size <= ht.nums.size ? ht.nums : cp.nums;
+      if (![...smaller].every(n => larger.has(n))) continue;
+    }
+
+    // Word overlap — use the shorter title as reference
+    const shorter = cp.words.size <= ht.words.size ? cp.words : ht.words;
+    const longer  = cp.words.size <= ht.words.size ? ht.words : cp.words;
+    const overlap = [...shorter].filter(w => longer.has(w)).length;
+    if (overlap / shorter.size >= 0.75) return true;
+  }
+
+  return false;
+}
 
 export function gapAnalysis(competitorProducts, hostProducts, brands = []) {
   // Build fast lookup sets from host products
-  const hostHandles  = new Set(hostProducts.map(p => normalise(p.handle)));
-  const hostTitles   = new Set(hostProducts.map(p => normalise(p.title)));
-  const hostSkus     = new Set(
-    hostProducts.flatMap(p => (p.variants || []).map(v => (v.sku || '').toLowerCase().trim()).filter(Boolean))
+  const hostHandles   = new Set(hostProducts.map(p => normalise(p.handle)));
+  const hostTitles    = new Set(hostProducts.map(p => normalise(p.title)));
+  const hostSkuList   = hostProducts.flatMap(p =>
+    (p.variants || []).map(v => (v.sku || '').toLowerCase().trim()).filter(Boolean)
   );
-  const hostBarcodes = new Set(
+  const hostSkus      = new Set(hostSkuList);
+  const hostBarcodes  = new Set(
     hostProducts.flatMap(p => (p.variants || []).map(v => (v.barcode || '').toLowerCase().trim()).filter(Boolean))
   );
+  // Pre-compute token sets for soft title matching (done once, reused per competitor product)
+  const hostTokensList = hostProducts.map(p => titleTokens(p.title));
 
   const missing = [];
   const matched = [];
@@ -36,27 +85,39 @@ export function gapAnalysis(competitorProducts, hostProducts, brands = []) {
     // Normalise competitor vendor through alias map before comparison
     const normVendor = cp.vendor ? (VENDOR_ALIASES[cp.vendor.toLowerCase().trim()] || cp.vendor) : cp.vendor;
 
-    const matchedBySku     = cpSkus.some(s => s && hostSkus.has(s));
-    const matchedByBarcode = cpBarcodes.some(b => b && hostBarcodes.has(b));
-    const matchedByHandle  = handle && hostHandles.has(handle);
-    const matchedByTitle   = title  && hostTitles.has(title);   // exact match only, no fuzzy
+    const matchedBySku       = cpSkus.some(s => s && hostSkus.has(s));
+    // SKU prefix: "PRN002406" matches "PRN002406-002408-52" and vice versa
+    const matchedBySkuPrefix = !matchedBySku && cpSkus.some(cs =>
+      cs && hostSkuList.some(hs => hs && (hs.startsWith(cs) || cs.startsWith(hs)))
+    );
+    const matchedByBarcode   = cpBarcodes.some(b => b && hostBarcodes.has(b));
+    const matchedByHandle    = handle && hostHandles.has(handle);
+    const matchedByTitle     = title  && hostTitles.has(title);
+    const matchedBySoftTitle = !matchedByTitle && !matchedByHandle && !matchedBySku && !matchedBySkuPrefix && !matchedByBarcode
+                               && softTitleMatch(cp.title, hostTokensList);
 
-    if (matchedBySku || matchedByBarcode || matchedByHandle || matchedByTitle) {
+    if (matchedBySku || matchedBySkuPrefix || matchedByBarcode || matchedByHandle || matchedByTitle || matchedBySoftTitle) {
       matched.push({
         ...cp,
-        matchReason: matchedBySku     ? 'sku'
-                   : matchedByBarcode ? 'barcode'
-                   : matchedByHandle  ? 'handle'
-                   : 'title',
+        matchReason: matchedBySku        ? 'sku'
+                   : matchedBySkuPrefix  ? 'sku-prefix'
+                   : matchedByBarcode    ? 'barcode'
+                   : matchedByHandle     ? 'handle'
+                   : matchedByTitle      ? 'title'
+                   : 'title-soft',
       });
     } else {
       // Brand filter — only include if product belongs to a watched brand
       if (brands.length > 0) {
         const cpVendor = (normVendor || cp.vendor || '').toLowerCase();
         const cpTitle  = (cp.title  || '').toLowerCase();
-        const brandMatch = brands.some(b =>
-          cpVendor.includes(b.toLowerCase()) || cpTitle.startsWith(b.toLowerCase())
-        );
+        const brandMatch = brands.some(b => {
+          const bl = b.toLowerCase();
+          // Bidirectional prefix check so "Evotech Performance" (brand) matches competitor
+          // vendor "Evotech", and "Evotech" (brand) matches competitor vendor "Evotech Performance"
+          return cpVendor.includes(bl) || bl.includes(cpVendor) ||
+                 cpTitle.startsWith(bl) || cpTitle.startsWith(cpVendor);
+        });
         if (!brandMatch) continue;
       }
       missing.push(cp);
@@ -132,11 +193,6 @@ function findMissingSizes(competitorProduct, hostProduct) {
   }));
 }
 
-/**
- * Normalise a string for comparison:
- * lowercase, trim, strip punctuation/special chars, collapse spaces.
- * "Shoei X-SPR Pro Helmet – Proxy TC-11" → "shoei xspr pro helmet proxy tc11"
- */
 // Vendor aliases — maps competitor vendor names to your Shopify vendor names
 // Add more entries here as you discover mismatches
 const VENDOR_ALIASES = {

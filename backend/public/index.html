@@ -805,6 +805,7 @@ tr:hover td { background: var(--surface2); }
               Refresh
             </button>
             <button class="btn btn-secondary btn-sm" onclick="selectAll()">Select all</button>
+            <button class="btn btn-secondary btn-sm" onclick="selectFullyAvailable()" title="Select only products where every size/variant is in stock — safe to upload with complete SKUs">Select fully available</button>
             <button class="btn btn-secondary btn-sm" onclick="selectNone()">Deselect all</button>
             <select id="filterBrand" onchange="applyFilters()" style="width:auto; padding:6px 10px; font-size:13px">
               <option value="">All brands</option>
@@ -1511,7 +1512,9 @@ async function syncWatchlistFromResults(products) {
     const unavailable = variants.filter(v => v.available === false || v.available === 0);
     const available   = variants.filter(v => v.available !== false && v.available !== 0);
 
-    if (unavailable.length > 0 && available.length > 0 && !existingIds.has(p.sourceId)) {
+    // Watch anything with unavailable sizes — partial stock AND fully
+    // out-of-stock products (no SKUs captured yet; rescrape once restocked)
+    if (unavailable.length > 0 && !existingIds.has(p.sourceId)) {
       toAdd.push({
         sourceId:            p.sourceId,
         title:               p.title,
@@ -1537,7 +1540,12 @@ async function syncWatchlistFromResults(products) {
       S_watchlistCache = null;
       await getWatchlist();
       updateWatchlistBadge();
-      showToast(`${toAdd.length} product${toAdd.length !== 1 ? 's' : ''} added to Watchlist (partial stock)`, 'warning');
+      const noStock = toAdd.filter(w => !w.availableVariants.length).length;
+      const partial = toAdd.length - noStock;
+      const parts = [];
+      if (partial) parts.push(`${partial} partial stock`);
+      if (noStock) parts.push(`${noStock} no stock`);
+      showToast(`${toAdd.length} product${toAdd.length !== 1 ? 's' : ''} added to Watchlist (${parts.join(', ')})`, 'warning');
     } catch(e) {
       showToast('Could not save to watchlist: ' + e.message, 'error');
     }
@@ -1664,6 +1672,7 @@ async function renderWatchlist() {
           <div class="text-sm text-muted" style="margin-top:2px">${esc(w.vendor)} · ${esc(w.productType || '')} · ${price} · Scanned ${esc(date)}</div>
           ${w.sourceUrl ? `<a href="${esc(w.sourceUrl)}" target="_blank" class="text-sm" style="color:var(--blue)" onclick="event.stopPropagation()">View on ${esc(w.competitorName || 'competitor')} ↗</a>` : ''}
           ${w.isDraft ? '<span class="badge badge-green" style="margin-left:8px">📤 Drafted</span>' : ''}
+          ${!avail.length ? '<span style="display:inline-block;background:#dc2626;color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:4px;margin-left:8px;letter-spacing:.03em">✗ No Stock</span>' : ''}
         </div>
         <div style="display:flex;gap:8px;flex-shrink:0" onclick="event.stopPropagation()">
           <button class="btn btn-secondary btn-sm" onclick="rescrapeOne(${idx})" title="Rescrape this product for latest variant availability">
@@ -1715,6 +1724,9 @@ async function uploadWatchlistItem(idx) {
   const items = getWatchlist();
   const w = items[idx];
   if (!w) return;
+  if (!(w.availableVariants || []).length) {
+    return showToast('No available sizes yet — rescrape once restocked to capture SKUs', 'error');
+  }
 
   // Build a product with ONLY the available variants for Shopify upload
   const productToUpload = {
@@ -1776,7 +1788,7 @@ async function rescrapeItems(itemsToRescrape) {
 
     try {
       // Call backend to scrape just this one product URL
-      const result = await api('POST', '/api/rescrape-product', { url: w.sourceUrl });
+      const result = await api('POST', '/api/rescrape-product', { url: w.sourceUrl, sourceId: w.sourceId });
 
       if (result?.product) {
         const p = result.product;
@@ -1821,8 +1833,14 @@ async function rescrapeItems(itemsToRescrape) {
 // ── Upload selected items' available sizes ────────────────────────────────────
 async function uploadSelectedWatchlist() {
   const items    = getWatchlist();
-  const selected = items.filter(w => S_watchlistSel.has(w.sourceId));
+  let selected = items.filter(w => S_watchlistSel.has(w.sourceId));
   if (!selected.length) return showToast('Select products first', 'error');
+
+  // No-stock items have nothing to upload yet — skip them
+  const skipped = selected.filter(w => !(w.availableVariants || []).length).length;
+  selected = selected.filter(w => (w.availableVariants || []).length);
+  if (!selected.length) return showToast('Selected products have no available sizes yet — rescrape once restocked', 'error');
+  if (skipped) showToast(`Skipping ${skipped} no-stock product${skipped !== 1 ? 's' : ''} (no SKUs yet)`, 'warning');
 
   const products = selected.map(w => ({
     ...w,
@@ -1834,9 +1852,10 @@ async function uploadSelectedWatchlist() {
     const results = await api('POST', '/api/create-drafts', { products });
     const created = results.created?.length || 0;
     if (created > 0) {
-      // Mark drafted
-      const watchlist = getWatchlist();
+      // Mark drafted — only items Shopify actually accepted
+      const createdTitles = new Set((results.created || []).map(c => (c.title||'').toLowerCase()));
       for (const w of selected) {
+        if (!createdTitles.has((w.title||'').toLowerCase())) continue;
         await api('PUT', `/api/watchlist/${encodeURIComponent(w.sourceId)}`, { isDraft: true });
         const idx = (S_watchlistCache || []).findIndex(x => x.sourceId === w.sourceId);
         if (idx !== -1) S_watchlistCache[idx].isDraft = true;
@@ -2061,11 +2080,13 @@ function renderProductGrid(products) {
     const tags     = (p.tags||'').split(',').slice(0,4).map(t=>t.trim()).filter(Boolean);
     const isSel    = S.selectedProducts.has(rawId);
     const isDraft  = p.isDraft||false;
-    // Partial stock: has variants but some are unavailable
+    // Stock states: partial = some sizes unavailable; no-stock = every size
+    // unavailable (no SKUs could be captured — rescrape once restocked)
     const variants   = p.variants || [];
     const hasUnavail = variants.some(v => v.available === false || v.available === 0);
     const hasAvail   = variants.some(v => v.available !== false && v.available !== 0);
     const isPartial  = variants.length > 0 && hasUnavail && hasAvail;
+    const isNoStock  = variants.length > 0 && hasUnavail && !hasAvail;
     S_imgRegistry[imgKey] = { images, idx:0 };
     const dots = hasMulti ? `<div class="img-dots" id="dots-${imgKey}">${images.map((_,i)=>`<div class="img-dot${i===0?' active':''}"></div>`).join('')}</div>` : '';
     return `<div class="product-card${isSel?' selected':''}" id="pcard-${cardId}" onclick="toggleProduct('${cardId}')">
@@ -2075,6 +2096,7 @@ function renderProductGrid(products) {
       </button>
 
       ${isPartial?`<div style="position:absolute;top:8px;left:8px;z-index:5;background:#f59e0b;color:#fff;font-size:10px;font-weight:700;padding:3px 7px;border-radius:4px;letter-spacing:.03em;box-shadow:0 1px 3px rgba(0,0,0,.2)">⚠ Partial Stock</div>`:''}
+      ${isNoStock?`<div style="position:absolute;top:8px;left:8px;z-index:5;background:#dc2626;color:#fff;font-size:10px;font-weight:700;padding:3px 7px;border-radius:4px;letter-spacing:.03em;box-shadow:0 1px 3px rgba(0,0,0,.2)">✗ No Stock</div>`:''}
       <div class="product-card-img">
         ${imgSrc?`<img id="img-${imgKey}" src="${esc(imgSrc)}" alt="${esc(p.title)}" loading="lazy" onerror="this.style.display='none'"/>`:'<span>📦</span>'}
         ${hasMulti?`<button class="img-arrow prev" onclick="event.stopPropagation();cycleImage(${imgKey},-1)">&#8249;</button><button class="img-arrow next" onclick="event.stopPropagation();cycleImage(${imgKey},1)">&#8250;</button>${dots}`:''}
@@ -2087,6 +2109,9 @@ function renderProductGrid(products) {
         ${isPartial?`<div style="font-size:11px;color:#b45309;margin-top:4px;font-weight:500">
           ✓ ${variants.filter(v=>v.available!==false&&v.available!==0).length} available &nbsp;·&nbsp;
           ✗ ${variants.filter(v=>v.available===false||v.available===0).length} unavailable
+        </div>`:''}
+        ${isNoStock?`<div style="font-size:11px;color:#b91c1c;margin-top:4px;font-weight:500">
+          ✗ All ${variants.length} size${variants.length!==1?'s':''} unavailable — no SKUs captured
         </div>`:''}
         ${tags.length?`<div class="product-card-tags">${tags.map(t=>`<span class="product-card-tag">${esc(t)}</span>`).join('')}</div>`:''}
       </div>
@@ -2127,6 +2152,25 @@ function selectNone() {
   S.selectedProducts.clear();
   applyFilters();
   updateSelectionBar();
+}
+
+// Select only products where every size/variant is in stock — these have a
+// complete set of SKUs and can be uploaded without missing-variant gaps
+function selectFullyAvailable() {
+  const products = S.activeTab === 'missing' ? S.lastResult.missing : S.lastResult.matched;
+  let filtered = products;
+  if (S.brandFilter) filtered = filtered.filter(p => p.vendor === S.brandFilter);
+  if (S.typeFilter)  filtered = filtered.filter(p => p.productType === S.typeFilter);
+  const fully = filtered.filter(p =>
+    (p.variants || []).length > 0 &&
+    p.variants.every(v => v.available !== false && v.available !== 0)
+  );
+  fully.forEach(p => S.selectedProducts.add(p.sourceId || p.handle));
+  applyFilters();
+  updateSelectionBar();
+  showToast(fully.length
+    ? `Selected ${fully.length} fully available product${fully.length !== 1 ? 's' : ''}`
+    : 'No products with all variants available', fully.length ? 'success' : 'error');
 }
 
 function updateSelectionBar() {
@@ -2200,28 +2244,91 @@ async function recheckAgainstShopify() {
     const vendors = [...new Set(allScanned.map(p => p.vendor).filter(Boolean))];
     showToast(`Live-checking ${vendors.length} vendor${vendors.length!==1?'s':''} against Shopify…`);
 
-    // Fetch fresh Shopify products for every vendor in this scan
-    const hostProds = [];
-    for (const v of vendors) {
+    // Fetch fresh Shopify products for every relevant vendor.
+    // Priority: use the scan's configured brand list (these match the store's own vendor names).
+    // Also try competitor vendor names and first-word variants as fallback — competitor sites
+    // often use shortened names (e.g. "Evotech") while the store uses the full name
+    // ("Evotech Performance"), or vice versa.
+    const VENDOR_ALIASES_RC = { 'quad': 'Quadlock', 'quad lock': 'Quadlock' };
+    const hostProds       = [];
+    const seenProdIds     = new Set();
+    const fetchedVendorKeys = new Set();
+
+    async function fetchHostByVendor(vendorName) {
+      const key = (vendorName || '').toLowerCase().trim();
+      if (!key || fetchedVendorKeys.has(key)) return;
+      fetchedVendorKeys.add(key);
       try {
-    const VENDOR_ALIASES = { 'quad': 'Quadlock', 'quad lock': 'Quadlock' };
-    const aliasedV = VENDOR_ALIASES[v.toLowerCase()] || v;
-    try { const hp = await api('GET', `/api/host-products?vendor=${encodeURIComponent(aliasedV)}`); hostProds.push(...(hp.products||[])); } catch(_) {}        hostProds.push(...(hp.products || []));
+        const aliased = VENDOR_ALIASES_RC[key] || vendorName;
+        const hp = await api('GET', `/api/host-products?vendor=${encodeURIComponent(aliased)}`);
+        for (const p of (hp.products || [])) {
+          const id = p.id || p.handle;
+          if (id && !seenProdIds.has(id)) { seenProdIds.add(id); hostProds.push(p); }
+        }
       } catch(_) {}
+    }
+
+    // Build the list of vendor names to query: scan brands first, then competitor vendors
+    const scanBrands    = S.lastResult.brands || [];
+    const vendorQueries = [...new Set([...scanBrands, ...vendors])];
+    for (const v of vendorQueries) {
+      await fetchHostByVendor(v);
+      // Also try the first word in case one side uses the full name and the other a short form
+      const firstWord = (v || '').split(/\s+/)[0];
+      if (firstWord && firstWord.toLowerCase() !== (v || '').toLowerCase()) {
+        await fetchHostByVendor(firstWord);
+      }
     }
 
     // Build lookup sets
     const hostTitles  = new Set(hostProds.map(p => normaliseTitle(p.title)));
     const hostHandles = new Set(hostProds.map(p => (p.handle||'').toLowerCase()));
-    const hostSkus    = new Set(hostProds.flatMap(p =>
+    const hostSkuList = hostProds.flatMap(p =>
       (p.variants||[]).map(v => (v.sku||'').toLowerCase().trim()).filter(Boolean)
-    ));
+    );
+    const hostSkus = new Set(hostSkuList);
+
+    // Soft title match — mirrors backend gapAnalysis logic.
+    // Requires 75%+ word overlap on the shorter title + model numbers must agree.
+    const SOFT_STOP_RC = new Set([
+      'the','a','an','to','and','or','for','in','with','of','by','at','on',
+      'suit','fits','compatible','inc','including','set','pair','new','genuine','oem',
+    ]);
+    function rcTitleTokens(str) {
+      const n = normaliseTitle(str);
+      return {
+        nums:  new Set((n.match(/\d{3,}/g) || [])),
+        words: new Set(n.split(' ').filter(w => w.length > 2 && !SOFT_STOP_RC.has(w))),
+      };
+    }
+    const hostTokensRC = hostProds.map(p => rcTitleTokens(p.title));
+    function softMatchRC(cpTitle) {
+      const cp = rcTitleTokens(cpTitle);
+      if (cp.words.size < 3) return false;
+      for (const ht of hostTokensRC) {
+        if (ht.words.size < 3) continue;
+        if (cp.nums.size > 0 && ht.nums.size > 0) {
+          const smaller = cp.nums.size <= ht.nums.size ? cp.nums : ht.nums;
+          const larger  = cp.nums.size <= ht.nums.size ? ht.nums : cp.nums;
+          if (![...smaller].every(n => larger.has(n))) continue;
+        }
+        const shorter = cp.words.size <= ht.words.size ? cp.words : ht.words;
+        const longer  = cp.words.size <= ht.words.size ? ht.words : cp.words;
+        if ([...shorter].filter(w => longer.has(w)).length / shorter.size >= 0.75) return true;
+      }
+      return false;
+    }
 
     const isNowStocked = (p) => {
       if (hostTitles.has(normaliseTitle(p.title)))       return true;
       if (hostHandles.has((p.handle||'').toLowerCase())) return true;
       const skus = (p.variants||[]).map(v => (v.sku||'').toLowerCase().trim()).filter(Boolean);
-      return skus.some(s => hostSkus.has(s));
+      // Exact SKU match
+      if (skus.some(s => hostSkus.has(s))) return true;
+      // SKU prefix match: "PRN002406" matches "PRN002406-002408-52" and vice versa
+      if (skus.some(cs => cs && hostSkuList.some(hs => hs && (hs.startsWith(cs) || cs.startsWith(hs))))) return true;
+      // Soft title match (same logic as backend gapAnalysis)
+      return softMatchRC(p.title);
     };
 
     // Re-classify ALL products based on live Shopify data
@@ -2399,6 +2506,7 @@ if (partial.length > 0) {
   const uploadStart = Date.now();
 
   try {
+    let rateLimitHit = false;
     const results = { created: [], failed: [] };
     for (let i = 0; i < selected.length; i++) {
       const elapsed = ((Date.now() - uploadStart) / 1000).toFixed(0);
@@ -2415,9 +2523,21 @@ if (partial.length > 0) {
       try {
         const r = await api('POST', '/api/create-drafts', { products: [selected[i]] });
         if (r.created?.length) results.created.push(...r.created);
-        if (r.failed?.length)  results.failed.push(...r.failed);
+        if (r.failed?.length) {
+          const errStr = r.failed[0]?.error ?? '';
+          if (errStr.includes('429') || errStr.toLowerCase().includes('too many requests')) {
+            rateLimitHit = true;
+            break;
+          }
+          results.failed.push(...r.failed);
+        }
       } catch(e) {
-        results.failed.push({ title: selected[i].title, error: e.message });
+        const errMsg = e.message ?? '';
+        if (errMsg.includes('429') || errMsg.toLowerCase().includes('too many requests')) {
+          rateLimitHit = true;
+          break;
+        }
+        results.failed.push({ title: selected[i].title, error: errMsg });
       }
     }
     const totalTime = ((Date.now() - uploadStart) / 1000).toFixed(1);
@@ -2427,17 +2547,6 @@ if (partial.length > 0) {
     refreshDashboard();
 
     const created = results.created?.length || 0;
-    const failed  = results.failed?.length || 0;
-
-    showModal(
-      'Products created',
-      `<div class="alert alert-success"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
-       ${created} product${created !== 1 ? 's' : ''} created in Shopify in ${totalTime}s.</div>
-       ${failed ? `<div class="alert alert-warning mt-4"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>${failed} failed.</div>` : ''}
-       <p class="text-sm text-muted mt-4">Review them from your Shopify admin under <strong>Products</strong>.</p>`,
-      [{ label: 'Open Shopify Admin', onclick: `window.open('https://${S.shopInfo?.domain || 'admin.shopify.com'}/admin/products','_blank')`, class: 'btn-primary' },
-       { label: 'Close', onclick: 'closeModal()' }]
-    );
 
     // Move created products from missing → matched immediately
     if (created > 0 && S.lastResult) {
@@ -2455,7 +2564,28 @@ if (partial.length > 0) {
       S.lastResult.matched = [...nowStocked, ...(S.lastResult.matched || [])];
     }
 
-    S.selectedProducts.clear();
+    if (rateLimitHit) {
+      await showConfirmDialog(
+        '⚠ Shopify Rate Limit Reached',
+        `<p style="margin:0 0 12px">Shopify has temporarily blocked product creation — too many requests.</p>
+        <p style="margin:0 0 12px"><strong>${created}</strong> product${created !== 1 ? 's' : ''} were created successfully before the limit was hit.</p>
+        <p style="margin:0;font-size:13px;color:var(--text2)">Wait 1–2 minutes then upload the remaining products. Shopify resets the limit automatically.</p>`,
+        [{ label: 'OK', value: 'ok', class: 'btn-primary' }]
+      );
+    } else {
+      const failed = results.failed?.length || 0;
+      showModal(
+        'Products created',
+        `<div class="alert alert-success"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+         ${created} product${created !== 1 ? 's' : ''} created in Shopify in ${totalTime}s.</div>
+         ${failed ? `<div class="alert alert-warning mt-4"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>${failed} failed.</div>` : ''}
+         <p class="text-sm text-muted mt-4">Review them from your Shopify admin under <strong>Products</strong>.</p>`,
+        [{ label: 'Open Shopify Admin', onclick: `window.open('https://${S.shopInfo?.domain || 'admin.shopify.com'}/admin/products','_blank')`, class: 'btn-primary' },
+         { label: 'Close', onclick: 'closeModal()' }]
+      );
+      S.selectedProducts.clear();
+    }
+
     updateSelectionBar();
     recalcSummary();
     if (S.lastResult) renderBrandSummary(S.lastResult.summary);

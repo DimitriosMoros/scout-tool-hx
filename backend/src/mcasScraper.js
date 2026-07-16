@@ -1,23 +1,3 @@
-/**
- * MCAS (Motorcycle Accessories Supermarket) Scraper
- *
- * MCAS is a custom platform (not Shopify). Key differences from AMX:
- * - Each size is a SEPARATE product with its own SKU (e.g. 1124085-p = S, 1124086-p = M)
- * - Product pages list sibling size SKUs in the description
- * - Brand pages at /brand/{slug}/ return static HTML — no JS rendering needed
- * - Collection pages with filters need Puppeteer
- * - Image URLs: https://www.mcas.com.au/assets/thumb/{sku}-p.jpg
- *
- * Strategy:
- *  1. Crawl brand page or filtered collection URL with Puppeteer
- *  2. Extract "parent" product URLs (the -p ones, which are the default size)
- *  3. For each parent, fetch the product page and extract:
- *     - Title, vendor, price, description, image
- *     - Sibling SKU list (all sizes) from the page
- *  4. Group all sibling SKUs into variants under one product
- *  5. Return normalised product objects matching AMX scraper output format
- */
-
 import axios from 'axios';
 import * as cheerio from 'cheerio';
 import puppeteer from 'puppeteer-core';
