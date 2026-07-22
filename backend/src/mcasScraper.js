@@ -5,6 +5,13 @@ import { jobStore } from './jobStore.js';
 
 const BASE = 'https://www.mcas.com.au';
 
+// Findify search API — powers all MCAS category/search listings client-side.
+// The key is published in the public config bundle; fall back to the known value.
+const FINDIFY_API = 'https://api.findify.io/v4';
+const FINDIFY_CONFIG_URL = 'https://assets.findify.io/www.mcas.com.au-config.min.js';
+const FINDIFY_KEY_FALLBACK = 'e1a5caa3-0f7a-4f47-a7c7-a0d37206cad2';
+const FINDIFY_PAGE_SIZE = 50;
+
 // ══════════════════════════════════════════════════════════════════════════════
 // CONFIGURATION
 // ══════════════════════════════════════════════════════════════════════════════
@@ -135,11 +142,171 @@ export async function scrapeMCAS(baseUrl, brands = [], onProgress = () => {}, jo
   return products;
 }
 
+// ── Findify API helpers ───────────────────────────────────────────────────────
+
+let findifyKeyCache = null;
+
+async function getFindifyKey() {
+  if (findifyKeyCache) return findifyKeyCache;
+  try {
+    const r = await axios.get(FINDIFY_CONFIG_URL, { headers: BROWSER_HEADERS, timeout: 15000 });
+    const m = String(r.data).match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    if (m) { findifyKeyCache = m[0]; return findifyKeyCache; }
+  } catch (e) {
+    console.log(`[MCAS] Findify config fetch failed (${e.message.slice(0, 50)}) — using fallback key`);
+  }
+  findifyKeyCache = FINDIFY_KEY_FALLBACK;
+  return findifyKeyCache;
+}
+
+function randomToken() {
+  return [...Array(16)].map(() => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[Math.floor(Math.random() * 62)]).join('');
+}
+
+async function findifyRequest(key, { slot, q, filters, offset, limit }) {
+  const endpoint = slot
+    ? `${FINDIFY_API}/${key}/smart-collection/${slot}`
+    : `${FINDIFY_API}/${key}/search`;
+  const body = {
+    user: { uid: randomToken(), sid: randomToken(), persist: false, exist: true },
+    t_client: Date.now(),
+    key,
+    limit: limit ?? FINDIFY_PAGE_SIZE,
+    offset: offset ?? 0,
+  };
+  if (slot) body.slot = slot;
+  if (q) body.q = q;
+  if (filters?.length) body.filters = filters;
+
+  const r = await axios.post(endpoint, body, {
+    headers: {
+      'Content-Type': 'application/json',
+      'Origin': BASE,
+      'Referer': `${BASE}/`,
+      'User-Agent': BROWSER_HEADERS['User-Agent'],
+    },
+    timeout: 30000,
+  });
+  return r.data;
+}
+
+// Parse an MCAS listing URL into a Findify request.
+// Category:  /all-products/road-.../full-face-helmet/?filters[brand][0]=SHARK  → slot + filters
+// Search:    /search?q=shark                                                   → q
+function parseMcasListingUrl(baseUrl) {
+  const u = new URL(baseUrl);
+  const q = u.searchParams.get('q') || '';
+  const path = u.pathname.replace(/^\/+|\/+$/g, '');
+  const slot = (!q && path && !/^search$/i.test(path)) ? path : null;
+
+  // filters[brand][0]=SHARK → { brand: ['SHARK'] }
+  const filterMap = {};
+  for (const [k, v] of u.searchParams.entries()) {
+    const m = k.match(/^filters\[([^\]]+)\]/);
+    if (m && v) (filterMap[m[1]] ??= []).push(v);
+  }
+  return { slot, q, filterMap };
+}
+
+// Map requested brand names onto the exact facet spellings Findify uses
+// (e.g. "shark" → "SHARK", "nolan" → both "Nolan" and "NOLAN").
+function mapBrandFacetValues(facets, wanted) {
+  const brandFacet = (facets || []).find(f => f.name === 'brand');
+  if (!brandFacet?.values?.length) return wanted;
+  const out = [];
+  for (const w of wanted) {
+    const matches = brandFacet.values
+      .map(v => v.value)
+      .filter(v => v.toLowerCase() === String(w).toLowerCase().trim());
+    if (matches.length) out.push(...matches);
+    else out.push(w);
+  }
+  return [...new Set(out)];
+}
+
+// ── Collection crawler (Findify API — no browser) ─────────────────────────────
+// Pages through offsets 0, 50, 100... until meta.total is exhausted, so it
+// works regardless of whether the page shows "Load more" or numbered pagination.
+
+export async function crawlMCASCollectionApi(baseUrl, brands, onProgress, jobId, maxProducts) {
+  const { slot, q, filterMap } = parseMcasListingUrl(baseUrl);
+  if (!slot && !q) return null; // not a listing URL we can map to the API
+
+  const key = await getFindifyKey();
+
+  // Union of brand values from the URL and the user's brand list
+  const wantedBrands = [...new Set([...(filterMap.brand || []), ...brands.map(b => b.trim()).filter(Boolean)])];
+
+  // Probe once (no filters) to read facet spellings and confirm the API works
+  const probe = await findifyRequest(key, { slot, q, offset: 0, limit: 1 });
+  if (!probe?.meta) return null;
+
+  const filters = [];
+  for (const [name, values] of Object.entries(filterMap)) {
+    if (name === 'brand') continue; // handled below with facet mapping
+    filters.push({ name, type: 'text', values: values.map(v => ({ value: v })) });
+  }
+  if (wantedBrands.length) {
+    const mapped = mapBrandFacetValues(probe.facets, wantedBrands);
+    filters.push({ name: 'brand', type: 'text', values: mapped.map(v => ({ value: v })) });
+    console.log(`[MCAS] Brand filter: ${mapped.join(', ')}`);
+  }
+
+  const productUrls = new Set();
+  let offset = 0;
+  let total = Infinity;
+  let emptyCount = 0;
+
+  while (offset < total && productUrls.size < maxProducts && offset <= 5000) {
+    if (jobId && jobStore.isCancelled(jobId)) { console.log('[MCAS] Cancelled'); break; }
+
+    const data = await findifyRequest(key, { slot, q, filters, offset, limit: FINDIFY_PAGE_SIZE });
+    total = data?.meta?.total ?? 0;
+    const items = data?.items || [];
+
+    const prevSize = productUrls.size;
+    for (const item of items) {
+      const url = item.product_url;
+      if (url && /-p$/.test(url)) productUrls.add(url.startsWith('http') ? url : `${BASE}${url}`);
+    }
+
+    const ts = new Date().toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    console.log(`[MCAS] [${ts}] API offset ${offset}: +${productUrls.size - prevSize} new (${productUrls.size}/${Math.min(total, maxProducts)} — ${total} total on site)`);
+    onProgress(`Found ${productUrls.size} of ${total} MCAS products...`, Math.min(12 + productUrls.size / 5, 28));
+
+    if (!items.length || productUrls.size === prevSize) { emptyCount++; if (emptyCount >= 2) break; }
+    else emptyCount = 0;
+
+    offset += FINDIFY_PAGE_SIZE;
+  }
+
+  return [...productUrls];
+}
+
 // ── Collection crawler ────────────────────────────────────────────────────────
 
 async function crawlMCASCollection(baseUrl, brands, onProgress, jobId, maxProducts, maxPages) {
-  const productUrls = new Set();
   console.log(`[MCAS] Crawling collection: ${baseUrl}`);
+
+  // Preferred path: query the Findify API directly — reliable offset pagination
+  try {
+    const apiUrls = await crawlMCASCollectionApi(baseUrl, brands, onProgress, jobId, maxProducts);
+    if (apiUrls && apiUrls.length) {
+      console.log(`[MCAS] Findify API returned ${apiUrls.length} product URLs`);
+      return apiUrls;
+    }
+    console.log('[MCAS] Findify API returned nothing — falling back to browser crawl');
+  } catch (e) {
+    console.log(`[MCAS] Findify API failed (${e.message.slice(0, 80)}) — falling back to browser crawl`);
+  }
+
+  return crawlMCASCollectionBrowser(baseUrl, brands, onProgress, jobId, maxProducts, maxPages);
+}
+
+// ── Collection crawler (browser fallback) ─────────────────────────────────────
+
+async function crawlMCASCollectionBrowser(baseUrl, brands, onProgress, jobId, maxProducts, maxPages) {
+  const productUrls = new Set();
 
   // MCAS search/collection pages use Findify — loads ~24 products at a time
   // clicking "Load more" (class: findify-components--button__link) appends the next batch

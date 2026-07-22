@@ -14,6 +14,7 @@ import { scrapeMCAS }        from './mcasScraper.js';
 import { scrapeMotoheaven }  from './motoheavenScraper.js';
 import { scrapeBikebiz }     from './bikebizScraper.js';
 import { scrapeHurtlegear }  from './hurtlegearScraper.js';
+import { scrapeRoadstore }   from './roadstoreScraper.js';
 import { scrapeGeneric }     from './genericScraper.js';
 
 const CONCURRENCY = 3;
@@ -159,6 +160,19 @@ export async function scrapeCompetitor(url, brands = [], onProgress = () => {}, 
     onProgress('Hurtle Gear detected - using dedicated scraper...', 8);
     const products = await scrapeHurtlegear(url, brands, onProgress, jobId, options);
     if (!products.length) throw new Error('No Hurtle Gear products found. Check URL and brand filters.');
+    return products.map(p => ({
+      ...p,
+      tags: generateTags(p, p.vendor || guessBrand(p.title, brands)),
+      productType: p.productType || inferProductType(p.title, p.description || ''),
+    }));
+  }
+
+  // Road Store (Neto + SearchSpring — pure API scraper)
+  if (url.includes('roadstore.com.au')) {
+    console.log('[scraper] Road Store detected — using dedicated scraper');
+    onProgress('Road Store detected - using dedicated scraper...', 8);
+    const products = await scrapeRoadstore(url, brands, onProgress, jobId, options);
+    if (!products.length) throw new Error('No Road Store products found. Check URL and brand filters.');
     return products.map(p => ({
       ...p,
       tags: generateTags(p, p.vendor || guessBrand(p.title, brands)),

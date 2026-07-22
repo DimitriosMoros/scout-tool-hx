@@ -7,9 +7,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { scrapeCompetitor } from './scraper.js';
 import { gapAnalysis } from './gapAnalysis.js';
-import { createDraftProducts, getShopifyProducts, getToken, initToken } from './shopify.js';
+import { addProductTags, createDraftProducts, getShopifyProducts, getToken, initToken, searchShopifyProducts } from './shopify.js';
 import { exportToExcel } from './excelExport.js';
-import { MOTO_MAKES } from './utils.js';
+import { MOTO_MAKES, generateTags } from './utils.js';
 import { jobStore } from './jobStore.js';
 import * as storage from './storage.js';
 
@@ -131,6 +131,107 @@ app.get('/api/vendors', requireAuth, async (req, res) => {
     console.error('[Vendors] Error:', err.message);
     res.status(500).json({ error: err.message });
   }
+});
+
+app.get('/api/product-types', requireAuth, async (req, res) => {
+  try {
+    const { vendor } = req.query;
+    const types = [];
+    const tagSet = new Set();
+    let cursor = null;
+    let hasNextPage = true;
+    let page = 0;
+
+    // With a vendor: collect distinct types from that vendor's products only.
+    // Without: the global productTypes connection (all types in the store).
+    const escVendor = vendor ? String(vendor).replace(/\\/g, '').replace(/'/g, "\\'").replace(/"/g, '') : '';
+
+    while (hasNextPage && page < 8) {
+      page++;
+      const query = vendor ? `{
+        products(first: 250, query: "vendor:'${escVendor.replace(/"/g, '\\"')}'"${cursor ? `, after: "${cursor}"` : ''}) {
+          nodes { productType tags }
+          pageInfo { hasNextPage endCursor }
+        }
+      }` : `{
+        productTypes(first: 1000${cursor ? `, after: "${cursor}"` : ''}) {
+          nodes
+          pageInfo { hasNextPage endCursor }
+        }
+      }`;
+
+      const tok = await getToken(req.shop) || req.shopToken;
+      const r = await fetch(`https://${req.shop}/admin/api/2025-01/graphql.json`, {
+        method: 'POST',
+        headers: { 'X-Shopify-Access-Token': tok, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query }),
+      });
+
+      if (!r.ok) throw new Error(`Shopify GraphQL ${r.status}`);
+      const data = await r.json();
+      if (data.errors) throw new Error(data.errors[0]?.message || 'GraphQL error');
+
+      const pt = vendor ? data?.data?.products : data?.data?.productTypes;
+      (pt?.nodes || []).forEach(t => {
+        const val = vendor ? t?.productType : t;
+        if (val && !types.includes(val)) types.push(val);
+        if (vendor && Array.isArray(t?.tags)) t.tags.forEach(tag => { if (tag) tagSet.add(tag); });
+      });
+      hasNextPage = pt?.pageInfo?.hasNextPage || false;
+      cursor      = pt?.pageInfo?.endCursor   || null;
+    }
+
+    types.sort();
+    const tags = [...tagSet].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    res.json({ types, tags });
+  } catch (err) {
+    console.error('[ProductTypes] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Tag Manager — search host products & bulk-add tags ────────────────────────
+app.get('/api/store-products', requireAuth, async (req, res) => {
+  try {
+    const { vendor, type, tag, q } = req.query;
+    if (!vendor && !type && !tag && !q) {
+      return res.status(400).json({ error: 'Provide a vendor, product type, tag or search text — will not fetch entire catalogue' });
+    }
+    const products = await searchShopifyProducts(req.shop, req.shopToken, { vendor, productType: type, tag, text: q });
+    res.json({ products, total: products.length });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/store-products/add-tags', requireAuth, async (req, res) => {
+  try {
+    const { productIds, tags } = req.body;
+    if (!Array.isArray(productIds) || !productIds.length) return res.status(400).json({ error: 'productIds required' });
+    const cleanTags = (Array.isArray(tags) ? tags : []).map(t => String(t).trim()).filter(Boolean);
+    if (!cleanTags.length) return res.status(400).json({ error: 'At least one tag required' });
+
+    console.log(`[TagManager] Adding [${cleanTags.join(', ')}] to ${productIds.length} products`);
+    const result = await addProductTags(req.shop, req.shopToken, productIds, cleanTags);
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.post('/api/suggest-tags', requireAuth, (req, res) => {
+  const { products } = req.body;
+  if (!Array.isArray(products) || !products.length) return res.status(400).json({ error: 'products required' });
+
+  const suggestedSet = new Set();
+  for (const p of products) {
+    const existingLower = new Set((p.existingTags || []).map(t => t.toLowerCase()));
+    const generated = generateTags(
+      { title: p.title || '', description: '', variants: [], productType: p.productType || '' },
+      p.vendor || ''
+    ).split(', ').filter(Boolean);
+    for (const tag of generated) {
+      if (!existingLower.has(tag.toLowerCase())) suggestedSet.add(tag);
+    }
+  }
+
+  res.json({ suggestions: [...suggestedSet] });
 });
 
 app.post('/api/scrape', requireAuth, (req, res) => {
@@ -421,6 +522,9 @@ app.post('/api/rescrape-product', requireAuth, async (req, res) => {
     if (/bikebiz\.com\.au/i.test(url)) {
       const { scrapeBikebizProduct } = await import('./bikebizScraper.js');
       products = await scrapeBikebizProduct(url);
+    } else if (/roadstore\.com\.au/i.test(url)) {
+      const { scrapeRoadstoreProduct } = await import('./roadstoreScraper.js');
+      products = await scrapeRoadstoreProduct(url);
     } else {
       const { scrapeAMX } = await import('./amxScraper.js');
       products = await scrapeAMX(url, [], () => {}, null, { maxProducts: 1, maxPages: 1 });

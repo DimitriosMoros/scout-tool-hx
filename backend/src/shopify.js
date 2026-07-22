@@ -216,6 +216,102 @@ function normaliseGraphQLProduct(p) {
   };
 }
 
+// ── Search host products for the Tag Manager ─────────────────────────────────
+// Accepts any combination of vendor / productType / tag / free-text (model) filters.
+// At least one is required so we never pull the whole catalogue by accident.
+export async function searchShopifyProducts(shop, token, { vendor, productType, tag, text } = {}) {
+  const esc = s => String(s).replace(/\\/g, '').replace(/'/g, "\\'").replace(/"/g, '');
+  const parts = [];
+  if (vendor)      parts.push(`vendor:'${esc(vendor)}'`);
+  if (productType) parts.push(`product_type:'${esc(productType)}'`);
+  if (tag)         parts.push(`tag:'${esc(tag)}'`);
+  if (text)        parts.push(esc(text)); // default-field search — matches title/model text
+  if (!parts.length) return [];
+
+  const query_filter = parts.join(' AND ');
+  console.log(`[Shopify] Tag Manager search: ${query_filter}`);
+
+  const products = [];
+  let cursor = null, hasNext = true, page = 0;
+  const MAX_PAGES = 8; // 2000 products cap for a tagging session
+
+  while (hasNext && page < MAX_PAGES) {
+    const gql = `{
+      products(first: 250, query: "${query_filter.replace(/"/g, '\\"')}", ${cursor ? `after: "${cursor}",` : ''}) {
+        nodes { id title handle vendor productType tags }
+        pageInfo { hasNextPage endCursor }
+      }
+    }`;
+
+    const activeToken = await getToken(shop) || token;
+    const r = await fetchWithTimeout(`https://${shop}/admin/api/${API_VERSION}/graphql.json`, {
+      method: 'POST',
+      headers: { 'X-Shopify-Access-Token': activeToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: gql }),
+    }, 25000);
+
+    if (!r.ok) throw new Error(`Shopify GraphQL ${r.status}`);
+    const data = await r.json();
+    if (data.errors) throw new Error(data.errors[0]?.message || 'GraphQL error');
+
+    const nodes = data?.data?.products?.nodes || [];
+    products.push(...nodes.map(p => ({
+      id:          p.id?.replace('gid://shopify/Product/', '') || '',
+      title:       p.title       || '',
+      handle:      p.handle      || '',
+      vendor:      p.vendor      || '',
+      productType: p.productType || '',
+      tags:        Array.isArray(p.tags) ? p.tags : [],
+    })));
+
+    hasNext = data?.data?.products?.pageInfo?.hasNextPage || false;
+    cursor  = data?.data?.products?.pageInfo?.endCursor   || null;
+    page++;
+    if (hasNext) await sleep(200);
+  }
+
+  console.log(`[Shopify] Tag Manager search found ${products.length} products`);
+  return products;
+}
+
+// ── Add tags to existing products (tagsAdd is additive — never removes) ──────
+export async function addProductTags(shop, token, productIds, tags) {
+  const result = { updated: 0, failed: 0, errors: [] };
+
+  for (const id of productIds) {
+    const gid = String(id).startsWith('gid://') ? id : `gid://shopify/Product/${id}`;
+    const gql = `mutation {
+      tagsAdd(id: ${JSON.stringify(gid)}, tags: ${JSON.stringify(tags)}) {
+        node { id }
+        userErrors { message }
+      }
+    }`;
+
+    try {
+      const activeToken = await getToken(shop) || token;
+      const r = await fetch(`https://${shop}/admin/api/${API_VERSION}/graphql.json`, {
+        method: 'POST',
+        headers: { 'X-Shopify-Access-Token': activeToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: gql }),
+      });
+      if (!r.ok) throw new Error(`Shopify GraphQL ${r.status}`);
+      const data = await r.json();
+      const errs = data?.data?.tagsAdd?.userErrors || [];
+      if (data.errors?.length) throw new Error(data.errors[0].message);
+      if (errs.length)         throw new Error(errs[0].message);
+      result.updated++;
+    } catch (e) {
+      result.failed++;
+      result.errors.push(`${id}: ${e.message}`);
+      console.error(`[Shopify] tagsAdd failed for ${id}: ${e.message}`);
+    }
+    await sleep(250); // stay well inside GraphQL rate limits
+  }
+
+  console.log(`[Shopify] Tags added — ${result.updated} updated, ${result.failed} failed`);
+  return result;
+}
+
 export async function createDraftProducts(shop, token, products) {
   const results = { created: [], failed: [] };
 
