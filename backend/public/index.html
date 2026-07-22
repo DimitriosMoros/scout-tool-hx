@@ -2976,9 +2976,9 @@ function tmToggleSuggestion(idx) {
   s.selected = !s.selected;
   const chip = document.getElementById(`tmSugChip-${idx}`);
   if (chip) {
-    chip.style.background  = s.selected ? 'var(--green-bg)'  : 'var(--surface)';
-    chip.style.borderColor = s.selected ? 'var(--green-b)'   : 'var(--border2)';
-    chip.style.color       = s.selected ? 'var(--green)'     : 'var(--text)';
+    chip.style.background  = s.selected ? 'var(--green-bg)' : 'var(--surface)';
+    chip.style.borderColor = s.selected ? 'var(--green-b)'  : 'var(--border2)';
+    chip.style.color       = s.selected ? 'var(--green)'    : 'var(--text)';
   }
   tmUpdateSugCount();
 }
@@ -3005,13 +3005,10 @@ async function tmApplySuggestions() {
         const r = await api('POST', '/api/store-products/add-tags', { productIds: s.productIds, tags: [s.tag] });
         totalUpdated += r.updated || 0;
         totalFailed  += r.failed  || 0;
-        // Reflect locally so the product list shows the new tag immediately
         for (const p of tmProducts) {
           if (s.productIds.includes(p.id) && !p.tags.includes(s.tag)) p.tags.push(s.tag);
         }
-        // Mark chip as done
-        const idx  = tmSuggestionsCache.indexOf(s);
-        const chip = document.getElementById(`tmSugChip-${idx}`);
+        const chip = document.getElementById(`tmSugChip-${tmSuggestionsCache.indexOf(s)}`);
         if (chip) {
           chip.style.background     = 'var(--surface2)';
           chip.style.borderColor    = 'var(--border)';
@@ -3020,9 +3017,7 @@ async function tmApplySuggestions() {
           chip.disabled = true;
         }
         s.selected = false;
-      } catch (e) {
-        totalFailed++;
-      }
+      } catch (_) { totalFailed++; }
     }
     showToast(
       `Applied to ${totalUpdated} product${totalUpdated === 1 ? '' : 's'}` + (totalFailed ? `, ${totalFailed} failed` : ''),
