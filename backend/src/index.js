@@ -219,7 +219,7 @@ app.post('/api/suggest-tags', requireAuth, (req, res) => {
   const { products } = req.body;
   if (!Array.isArray(products) || !products.length) return res.status(400).json({ error: 'products required' });
 
-  const suggestedSet = new Set();
+  const tagMap = new Map(); // tag → Set<productId>
   for (const p of products) {
     const existingLower = new Set((p.existingTags || []).map(t => t.toLowerCase()));
     const generated = generateTags(
@@ -227,11 +227,15 @@ app.post('/api/suggest-tags', requireAuth, (req, res) => {
       p.vendor || ''
     ).split(', ').filter(Boolean);
     for (const tag of generated) {
-      if (!existingLower.has(tag.toLowerCase())) suggestedSet.add(tag);
+      if (!existingLower.has(tag.toLowerCase())) {
+        if (!tagMap.has(tag)) tagMap.set(tag, new Set());
+        tagMap.get(tag).add(p.id);
+      }
     }
   }
 
-  res.json({ suggestions: [...suggestedSet] });
+  const suggestions = [...tagMap.entries()].map(([tag, ids]) => ({ tag, productIds: [...ids] }));
+  res.json({ suggestions });
 });
 
 app.post('/api/scrape', requireAuth, (req, res) => {

@@ -954,11 +954,16 @@ tr:hover td { background: var(--surface2); }
         <!-- Suggested tags chips -->
         <div id="tmSuggestions" style="display:none;margin-bottom:14px;padding:12px 14px;background:var(--surface2);border:1px solid var(--border);border-radius:var(--radius)">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-            <span style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Suggested tags — click to add to input</span>
+            <span style="font-size:11px;font-weight:600;color:var(--text2);text-transform:uppercase;letter-spacing:.05em">Suggested tags — select to apply precisely</span>
             <div style="flex:1"></div>
             <button class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px" onclick="document.getElementById('tmSuggestions').style.display='none'">✕</button>
           </div>
-          <div id="tmSugChips" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+          <div id="tmSugChips" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px"></div>
+          <div style="display:flex;align-items:center;gap:10px;padding-top:10px;border-top:1px solid var(--border)">
+            <span id="tmSugCount" style="font-size:12px;color:var(--text2)">Click tags above to select them</span>
+            <div style="flex:1"></div>
+            <button class="btn btn-primary btn-sm" onclick="tmApplySuggestions()" id="tmSugApplyBtn" disabled>Apply selected suggestions</button>
+          </div>
         </div>
 
         <!-- List controls -->
@@ -2921,6 +2926,7 @@ async function tmApplyTags() {
   }
 }
 
+// Each entry: { tag, productIds, selected }
 let tmSuggestionsCache = [];
 
 async function tmSuggestTags() {
@@ -2933,10 +2939,10 @@ async function tmSuggestTags() {
   btn.disabled = true; btn.textContent = 'Suggesting…';
   try {
     const payload = targetProducts.map(p => ({
-      title: p.title, vendor: p.vendor, productType: p.productType, existingTags: p.tags,
+      id: p.id, title: p.title, vendor: p.vendor, productType: p.productType, existingTags: p.tags,
     }));
     const r = await api('POST', '/api/suggest-tags', { products: payload });
-    tmSuggestionsCache = r.suggestions || [];
+    tmSuggestionsCache = (r.suggestions || []).map(s => ({ ...s, selected: false }));
 
     const sugEl   = document.getElementById('tmSuggestions');
     const chipsEl = document.getElementById('tmSugChips');
@@ -2947,14 +2953,14 @@ async function tmSuggestTags() {
       return;
     }
 
-    chipsEl.innerHTML = tmSuggestionsCache.map((t, i) =>
-      `<button id="tmSugChip-${i}" onclick="tmAddSuggestion(${i})"
+    chipsEl.innerHTML = tmSuggestionsCache.map((s, i) =>
+      `<button id="tmSugChip-${i}" onclick="tmToggleSuggestion(${i})"
+        title="Needed by ${s.productIds.length} product${s.productIds.length === 1 ? '' : 's'}"
         style="cursor:pointer;border:1px solid var(--border2);background:var(--surface);border-radius:20px;padding:3px 10px;font-size:12px;font-family:inherit;color:var(--text);transition:background .12s,border-color .12s"
-        onmouseover="if(!this.disabled){this.style.background='var(--blue-bg)';this.style.borderColor='var(--blue-b)'}"
-        onmouseout="if(!this.disabled){this.style.background='var(--surface)';this.style.borderColor='var(--border2)'}"
-      >${esc(t)}</button>`
+      >${esc(s.tag)} <span style="opacity:.55">(${s.productIds.length})</span></button>`
     ).join('');
 
+    tmUpdateSugCount();
     sugEl.style.display = 'block';
   } catch (e) {
     showToast('Suggest failed: ' + e.message, 'error');
@@ -2964,31 +2970,68 @@ async function tmSuggestTags() {
   }
 }
 
-function tmAddSuggestion(idx) {
-  const tag = tmSuggestionsCache[idx];
-  if (!tag) return;
-  const input   = document.getElementById('tmNewTags');
-  const current = input.value.split(',').map(s => s.trim()).filter(Boolean);
-  const chip    = document.getElementById(`tmSugChip-${idx}`);
-  const already = current.includes(tag);
+function tmToggleSuggestion(idx) {
+  const s = tmSuggestionsCache[idx];
+  if (!s) return;
+  s.selected = !s.selected;
+  const chip = document.getElementById(`tmSugChip-${idx}`);
+  if (chip) {
+    chip.style.background  = s.selected ? 'var(--green-bg)'  : 'var(--surface)';
+    chip.style.borderColor = s.selected ? 'var(--green-b)'   : 'var(--border2)';
+    chip.style.color       = s.selected ? 'var(--green)'     : 'var(--text)';
+  }
+  tmUpdateSugCount();
+}
 
-  if (already) {
-    input.value = current.filter(t => t !== tag).join(', ');
-    if (chip) {
-      chip.style.background     = 'var(--surface)';
-      chip.style.borderColor    = 'var(--border2)';
-      chip.style.color          = 'var(--text)';
-      chip.style.textDecoration = 'none';
+function tmUpdateSugCount() {
+  const n = tmSuggestionsCache.filter(s => s.selected).length;
+  document.getElementById('tmSugCount').textContent = n
+    ? `${n} tag${n === 1 ? '' : 's'} selected`
+    : 'Click tags above to select them';
+  document.getElementById('tmSugApplyBtn').disabled = !n;
+}
+
+async function tmApplySuggestions() {
+  const selected = tmSuggestionsCache.filter(s => s.selected);
+  if (!selected.length) return;
+
+  const btn = document.getElementById('tmSugApplyBtn');
+  btn.disabled = true; btn.textContent = 'Applying…';
+
+  let totalUpdated = 0, totalFailed = 0;
+  try {
+    for (const s of selected) {
+      try {
+        const r = await api('POST', '/api/store-products/add-tags', { productIds: s.productIds, tags: [s.tag] });
+        totalUpdated += r.updated || 0;
+        totalFailed  += r.failed  || 0;
+        // Reflect locally so the product list shows the new tag immediately
+        for (const p of tmProducts) {
+          if (s.productIds.includes(p.id) && !p.tags.includes(s.tag)) p.tags.push(s.tag);
+        }
+        // Mark chip as done
+        const idx  = tmSuggestionsCache.indexOf(s);
+        const chip = document.getElementById(`tmSugChip-${idx}`);
+        if (chip) {
+          chip.style.background     = 'var(--surface2)';
+          chip.style.borderColor    = 'var(--border)';
+          chip.style.color          = 'var(--text3)';
+          chip.style.textDecoration = 'line-through';
+          chip.disabled = true;
+        }
+        s.selected = false;
+      } catch (e) {
+        totalFailed++;
+      }
     }
-  } else {
-    current.push(tag);
-    input.value = current.join(', ');
-    if (chip) {
-      chip.style.background     = 'var(--green-bg)';
-      chip.style.borderColor    = 'var(--green-b)';
-      chip.style.color          = 'var(--green)';
-      chip.style.textDecoration = 'line-through';
-    }
+    showToast(
+      `Applied to ${totalUpdated} product${totalUpdated === 1 ? '' : 's'}` + (totalFailed ? `, ${totalFailed} failed` : ''),
+      totalFailed ? 'warning' : 'success'
+    );
+    tmRender();
+  } finally {
+    btn.disabled = false; btn.textContent = 'Apply selected suggestions';
+    tmUpdateSugCount();
   }
 }
 
