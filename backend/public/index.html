@@ -489,7 +489,7 @@ tr:hover td { background: var(--surface2); }
   <nav class="sidebar">
     <div class="sidebar-brand">
       <div class="wordmark">Competitor Scout</div>
-      <div class="sub">by Highside</div>
+      <div class="sub">by Heretics Software</div>
     </div>
 
     <div class="nav">
@@ -554,7 +554,7 @@ tr:hover td { background: var(--surface2); }
           <p>Your store vs competitor gap analysis at a glance.</p>
         </div>
 
-        <div class="grid-4 mb-4" id="dashStats">
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:16px;margin-bottom:20px" id="dashStats">
           <div class="card stat-card">
             <div class="stat-val" id="ds-competitors">—</div>
             <div class="stat-lbl">Competitors tracked</div>
@@ -565,11 +565,15 @@ tr:hover td { background: var(--surface2); }
           </div>
           <div class="card stat-card">
             <div class="stat-val" id="ds-missing" style="color:var(--red)">—</div>
-            <div class="stat-lbl">Missing products</div>
+            <div class="stat-lbl">Missing products (lifetime)</div>
           </div>
           <div class="card stat-card">
-            <div class="stat-val" id="ds-drafts" style="color:var(--amber)">—</div>
-            <div class="stat-lbl">Draft products created</div>
+            <div class="stat-val" id="ds-scanned" style="color:var(--blue)">—</div>
+            <div class="stat-lbl">Products scanned (lifetime)</div>
+          </div>
+          <div class="card stat-card">
+            <div class="stat-val" id="ds-uploaded" style="color:var(--green)">—</div>
+            <div class="stat-lbl">Products uploaded to Shopify (lifetime)</div>
           </div>
         </div>
 
@@ -608,41 +612,37 @@ tr:hover td { background: var(--surface2); }
       <div class="page" id="page-competitors">
         <div class="page-header">
           <h2>Competitor sites</h2>
-          <p>Add the websites you want to monitor. We support Shopify stores and regular websites.</p>
+          <p>Add the websites you want to monitor. We support Shopify, Magento, WooCommerce and more.</p>
         </div>
 
-        <div class="card mb-4">
-          <div class="card-header">
-            <h3>Add competitor</h3>
-          </div>
-          <div class="card-body">
-            <div class="grid-2">
-              <div class="field">
-                <label>Competitor name</label>
-                <input type="text" id="comp-name" placeholder="e.g. AMX Superstores"/>
-              </div>
-              <div class="field">
-                <label>Website URL</label>
-                <input type="url" id="comp-url" placeholder="https://www.amxsuperstores.com.au"/>
+        <!-- Add form -->
+        <div class="card mb-4" style="padding:20px">
+          <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end">
+            <div class="field" style="margin-bottom:0;flex:1;min-width:180px">
+              <label>Name</label>
+              <input type="text" id="comp-name" placeholder="e.g. AMX Superstores" autocomplete="off"
+                onkeydown="if(event.key==='Enter')document.getElementById('comp-url').focus()"/>
+            </div>
+            <div class="field" style="margin-bottom:0;flex:2;min-width:260px">
+              <label>Website</label>
+              <div style="position:relative">
+                <input type="url" id="comp-url" placeholder="amxsuperstores.com.au" autocomplete="off"
+                  oninput="compDetectPlatform(this.value)"
+                  onkeydown="if(event.key==='Enter')addCompetitor()"
+                  style="padding-right:90px"/>
+                <span id="compPlatformBadge" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;pointer-events:none"></span>
               </div>
             </div>
-            <div class="field">
-              <label>Brand filter <span class="text-muted text-sm">(optional — only scrape these brands)</span></label>
-              <input type="text" id="brandFilterInput" placeholder="e.g. Shoei, Dainese, HJC — leave empty for all brands"/>
-              <div class="hint">Enter brand names separated by commas</div>
-            </div>
-            <button class="btn btn-primary" onclick="addCompetitor()">
+            <button class="btn btn-primary" onclick="addCompetitor()" style="margin-bottom:0;flex-shrink:0">
               <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
-              Add competitor
+              Add
             </button>
           </div>
         </div>
 
-        <div class="card">
-          <div class="card-header"><h3>Tracked competitors</h3></div>
-          <div id="competitorsList">
-            <div class="empty"><div class="icon">🌐</div><h3>No competitors yet</h3><p>Add your first competitor above to start tracking gaps.</p></div>
-          </div>
+        <!-- Competitor cards -->
+        <div id="competitorsList">
+          <div class="empty"><div class="icon">🌐</div><h3>No competitors yet</h3><p>Add your first competitor above to start tracking gaps.</p></div>
         </div>
       </div>
 
@@ -666,10 +666,25 @@ tr:hover td { background: var(--surface2); }
               </div>
 
               <div class="field">
-                <label>Override brand filter <span class="text-muted text-sm">(optional)</span></label>
-                <div class="tags-input-wrap" id="scanBrandTagsWrap">
-                  <input type="text" id="scanBrandTagInput" placeholder="Add brands or leave blank to use competitor default…"/>
+                <label>Brand / Vendor</label>
+                <div style="display:flex;gap:8px;align-items:center">
+                  <select id="scanVendorSelect" onchange="onVendorChange()" disabled style="flex:1">
+                    <option value="">— select a competitor first —</option>
+                  </select>
+                  <button class="btn btn-secondary btn-sm" id="refreshBrandsBtn" onclick="onCompetitorChange(true)" title="Reload all vendors from the competitor site" style="display:none;flex-shrink:0;gap:4px">
+                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                    Reload all vendors
+                  </button>
                 </div>
+                <input type="text" id="scanVendorManual" placeholder="Type brand name manually…" oninput="updateScanUrlPreview()" style="display:none;margin-top:8px"/>
+                <div class="hint" id="scanVendorHint"></div>
+              </div>
+
+              <div class="field" id="scanSubcategoryField" style="display:none">
+                <label>Sub-category <span class="text-muted text-sm">(optional)</span></label>
+                <select id="scanSubcategorySelect" onchange="updateScanUrlPreview()">
+                  <option value="">All — no sub-category filter</option>
+                </select>
               </div>
 
               <div class="field">
@@ -680,37 +695,17 @@ tr:hover td { background: var(--surface2); }
                 <div class="hint">Unchecked: scrapes fresh and merges with cached results — builds up total over multiple scans. Checked: skips scraping, uses cached only.</div>
               </div>
 
-              <div class="grid-2" style="gap:16px;margin-bottom:16px">
+              <div style="margin-bottom:16px">
                 <div class="field" style="margin-bottom:0">
                   <label>Max products to scrape</label>
                   <input type="number" id="maxProductsInput" value="20" min="1" max="250"/>
                   <div class="hint">Each product takes ~30–60s with Puppeteer</div>
                 </div>
-                <div class="field" style="margin-bottom:0">
-                  <label>Max pages per collection</label>
-                  <input type="number" id="maxPagesInput" value="5" min="1" max="20"/>
-                  <div class="hint">Collection pages to crawl for product URLs</div>
-                </div>
               </div>
 
-              <!-- Vendor quick-select — loads your Shopify vendors for this competitor -->
-              <div class="field" id="vendorPickerWrap" style="display:none">
-                <label>Quick-select vendor <span class="text-muted text-sm">(loads from your Shopify store)</span></label>
-                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-                  <select id="vendorPicker" onchange="addVendorFromPicker()" style="width:auto;flex:1">
-                    <option value="">— pick a vendor to add —</option>
-                  </select>
-                  <button class="btn btn-secondary btn-sm" onclick="loadVendors()" id="loadVendorsBtn">
-                    <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                    Load vendors
-                  </button>
-                </div>
-                <div class="hint">Select a vendor to add it to the brand filter above</div>
-              </div>
-
-              <div id="scanCompetitorPreview" style="display:none" class="alert alert-info mb-4">
+              <div id="scanUrlPreview" style="display:none" class="alert alert-info mb-4">
                 <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
-                <span id="scanPreviewText"></span>
+                <span id="scanUrlPreviewText"></span>
               </div>
 
               <button class="btn btn-primary btn-lg" onclick="startScan()" id="startScanBtn">
@@ -1114,9 +1109,19 @@ async function init() {
   // Host product count is NOT loaded on startup (store may have 250k+ products).
   // It updates after each scan based on the vendor-targeted fetch.
   refreshDashboard();
+  loadStats();
   setupTagInputs();
   loadAndRenderHistory();
   getWatchlist().then(updateWatchlistBadge); // load and show badge
+}
+
+async function loadStats() {
+  try {
+    const s = await api('GET', '/api/stats');
+    document.getElementById('ds-scanned').textContent  = (s.productsScanned  || 0).toLocaleString();
+    document.getElementById('ds-missing').textContent  = (s.productsMissing  || 0).toLocaleString();
+    document.getElementById('ds-uploaded').textContent = (s.productsUploaded || 0).toLocaleString();
+  } catch(_) {}
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1125,8 +1130,6 @@ async function init() {
 function refreshDashboard() {
   document.getElementById('ds-competitors').textContent = S.competitors.length;
   document.getElementById('ds-host-products').textContent = S.hostProductCount.toLocaleString();
-  document.getElementById('ds-missing').textContent = S.lastResult ? S.lastResult.missing.length : '—';
-  document.getElementById('ds-drafts').textContent = S.draftCount || '—';
 
   if (S.lastResult) {
     document.getElementById('dash-view-results').style.display = '';
@@ -1137,6 +1140,29 @@ function refreshDashboard() {
 // ═══════════════════════════════════════════════════════════════════
 // COMPETITORS
 // ═══════════════════════════════════════════════════════════════════
+function detectPlatformLabel(url) {
+  if (!url) return null;
+  if (/amxsuperstores/i.test(url))  return { label: 'Shopify',  color: 'var(--green)', bg: 'var(--green-bg)',  border: 'var(--green-b)' };
+  if (/mcas\.com\.au/i.test(url))   return { label: 'Shopify',  color: 'var(--green)', bg: 'var(--green-bg)',  border: 'var(--green-b)' };
+  if (/motoheaven/i.test(url))      return { label: 'Shopify',  color: 'var(--green)', bg: 'var(--green-bg)',  border: 'var(--green-b)' };
+  if (/bikebiz/i.test(url))         return { label: 'Shopify',  color: 'var(--green)', bg: 'var(--green-bg)',  border: 'var(--green-b)' };
+  if (/myshopify\.com/i.test(url))  return { label: 'Shopify',  color: 'var(--green)', bg: 'var(--green-bg)',  border: 'var(--green-b)' };
+  if (/hurtlegear/i.test(url))      return { label: 'Neto',     color: 'var(--blue)',  bg: 'var(--blue-bg)',   border: 'var(--blue-b)' };
+  if (/roadstore/i.test(url))       return { label: 'Neto',     color: 'var(--blue)',  bg: 'var(--blue-bg)',   border: 'var(--blue-b)' };
+  return null;
+}
+
+function compDetectPlatform(url) {
+  const badge = document.getElementById('compPlatformBadge');
+  const p = detectPlatformLabel(url);
+  if (p && url.length > 6) {
+    badge.textContent = p.label;
+    badge.style.cssText = `display:inline-block;position:absolute;right:10px;top:50%;transform:translateY(-50%);font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:${p.bg};color:${p.color};border:1px solid ${p.border};pointer-events:none`;
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
 function renderCompetitors() {
   const el = document.getElementById('competitorsList');
   if (!S.competitors.length) {
@@ -1144,62 +1170,58 @@ function renderCompetitors() {
     return;
   }
 
-  el.innerHTML = `
-    <div class="table-wrap">
-      <table>
-        <thead><tr>
-          <th>Name</th><th>URL</th><th>Brands</th><th>Actions</th>
-        </tr></thead>
-        <tbody id="competitorsTbody"></tbody>
-      </table>
+  el.innerHTML = S.competitors.map(c => {
+    const platform = detectPlatformLabel(c.url);
+    let domain = c.url;
+    try { domain = new URL(c.url).hostname.replace(/^www\./, ''); } catch(_) {}
+    return `
+    <div class="card" style="padding:16px 20px;margin-bottom:10px;display:flex;align-items:center;gap:16px">
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+          <span style="font-weight:600;font-size:15px">${esc(c.name)}</span>
+          ${platform ? `<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:20px;background:${platform.bg};color:${platform.color};border:1px solid ${platform.border}">${esc(platform.label)}</span>` : ''}
+        </div>
+        <div style="margin-bottom:8px">
+          <a href="${esc(c.url)}" target="_blank" style="font-size:12px;color:var(--text2);text-decoration:none" onmouseover="this.style.color='var(--blue)'" onmouseout="this.style.color='var(--text2)'">${esc(domain)}</a>
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          ${c.brands?.length
+            ? c.brands.map(b => `<span class="badge badge-neutral">${esc(b)}</span>`).join('')
+            : '<span style="font-size:12px;color:var(--text3);font-style:italic">All brands</span>'}
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-shrink:0">
+        <button class="btn btn-primary btn-sm" onclick="scanCompetitor('${c.id}')">
+          <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          Scan now
+        </button>
+        <button class="btn btn-ghost btn-sm" onclick="deleteCompetitor('${c.id}')" style="color:var(--red)">Remove</button>
+      </div>
     </div>`;
-
-  const tbody = document.getElementById('competitorsTbody');
-  S.competitors.forEach(c => {
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><strong>${esc(c.name)}</strong></td>
-      <td><a href="${esc(c.url)}" target="_blank" class="text-sm mono" style="color:var(--blue)">${esc(c.url)}</a></td>
-      <td>${c.brands?.length ? c.brands.map(b => `<span class="badge badge-neutral">${esc(b)}</span>`).join(' ') : '<span class="text-muted text-sm">All brands</span>'}</td>
-      <td style="display:flex;gap:8px;align-items:center">
-        <button class="btn btn-secondary btn-sm" onclick="scanCompetitor('${c.id}')">Scan now</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteCompetitor('${c.id}')">Remove</button>
-      </td>`;
-    tbody.appendChild(tr);
-  });
+  }).join('');
 }
 
 async function addCompetitor() {
-  const name   = document.getElementById('comp-name').value.trim();
-  let url      = document.getElementById('comp-url').value.trim();
-  const brandInput = document.getElementById('brandFilterInput').value.trim();
-  const brands = brandInput ? brandInput.split(',').map(b => b.trim()).filter(Boolean) : [];
-
-  console.log('addCompetitor called:', { name, url, brands });
+  const name = document.getElementById('comp-name').value.trim();
+  let url    = document.getElementById('comp-url').value.trim();
 
   if (!name) return showToast('Enter a competitor name', 'error');
-  if (!url)  return showToast('Enter the website URL', 'error');
+  if (!url)  return showToast('Enter the website', 'error');
 
-  // Add https:// if missing
   if (!url.startsWith('http')) url = `https://${url}`;
 
-  // Always keep the full URL — both AMX and MCAS use specific collection paths
-  // with filters/vendor params that must be preserved for accurate scraping.
-  try {
-    new URL(url); // just validate — don't strip anything
-  } catch (e) {
-    return showToast('Invalid URL format', 'error');
+  try { url = new URL(url).origin; } catch(e) {
+    return showToast('Invalid URL', 'error');
   }
 
   try {
-    const entry = await api('POST', '/api/competitors', { name, url, brands });
+    const entry = await api('POST', '/api/competitors', { name, url, brands: [] });
     S.competitors.push(entry);
-    // Reset form
     document.getElementById('comp-name').value = '';
     document.getElementById('comp-url').value  = '';
-    document.getElementById('brandFilterInput').value = '';
+    document.getElementById('compPlatformBadge').style.display = 'none';
     renderCompetitors();
-    showToast(`"${name}" added successfully`);
+    showToast(`"${name}" added`);
   } catch(e) {
     showToast('Error: ' + e.message, 'error');
   }
@@ -1244,54 +1266,136 @@ function refreshScanCompetitorSelect() {
 document.getElementById('scan-competitor').addEventListener('change', refreshScanCompetitorPreview);
 
 function refreshScanCompetitorPreview() {
+  onCompetitorChange();
+}
+
+async function onCompetitorChange(forceRefresh = false) {
+  const id        = document.getElementById('scan-competitor').value;
+  const vendorSel = document.getElementById('scanVendorSelect');
+  const subSel    = document.getElementById('scanSubcategorySelect');
+  const subField  = document.getElementById('scanSubcategoryField');
+  const hint      = document.getElementById('scanVendorHint');
+  const refreshBtn = document.getElementById('refreshBrandsBtn');
+
+  vendorSel.innerHTML = '<option value="">— select a competitor first —</option>';
+  vendorSel.disabled  = true;
+  if (refreshBtn) refreshBtn.style.display = 'none';
+  if (subSel) subSel.innerHTML = '<option value="">All — no sub-category filter</option>';
+  if (subField) subField.style.display = 'none';
+  if (hint) hint.textContent = '';
+  updateScanUrlPreview();
+
+  if (!id) return;
+
+  const manual = document.getElementById('scanVendorManual');
+  if (manual) manual.style.display = 'none';
+
+  if (hint) hint.textContent = forceRefresh ? 'Reloading all vendors…' : 'Loading brands…';
+  try {
+    const qs   = forceRefresh ? '?refresh=1' : '';
+    const data = await api('GET', `/api/competitors/${id}/brands${qs}`);
+    vendorSel.innerHTML = '<option value="">— select a brand —</option>';
+    (data.brands || []).forEach(b => {
+      const opt = document.createElement('option');
+      opt.value        = b.handle;
+      opt.dataset.name = b.name;
+      opt.textContent  = b.name;
+      vendorSel.appendChild(opt);
+    });
+    if (hint) {
+      const dateStr = formatLastChecked(data.lastChecked);
+      hint.textContent = dateStr + (data.stale ? ' · Refreshing in background…' : '');
+    }
+    if (refreshBtn) refreshBtn.style.display = '';
+    vendorSel.style.display = '';
+  } catch(e) {
+    // Brand discovery failed (e.g. old-style competitor with specific URL) —
+    // hide the select and show a manual text input as fallback
+    vendorSel.innerHTML = '<option value="">— brand list unavailable —</option>';
+    vendorSel.style.display = 'none';
+    if (manual) { manual.style.display = ''; manual.value = ''; manual.focus(); }
+    if (hint) hint.textContent = 'Enter brand name manually';
+  } finally {
+    vendorSel.disabled = false;
+  }
+  updateScanUrlPreview();
+}
+
+function formatLastChecked(iso) {
+  if (!iso) return '';
+  const diff = Date.now() - new Date(iso).getTime();
+  const days = Math.floor(diff / (24 * 60 * 60 * 1000));
+  if (days === 0) return 'Last checked: today';
+  if (days === 1) return 'Last checked: yesterday';
+  return `Last checked: ${days} days ago`;
+}
+
+async function onVendorChange() {
+  const id     = document.getElementById('scan-competitor').value;
+  const sel    = document.getElementById('scanVendorSelect');
+  const handle = sel?.value || '';
+  const subSel  = document.getElementById('scanSubcategorySelect');
+  const subField = document.getElementById('scanSubcategoryField');
+
+  if (subSel) subSel.innerHTML = '<option value="">All — no sub-category filter</option>';
+  if (subField) subField.style.display = 'none';
+  updateScanUrlPreview();
+
+  if (!id || !handle) return;
+
+  if (subSel) { subSel.innerHTML = '<option value="">Loading subcategories…</option>'; subSel.disabled = true; }
+  if (subField) subField.style.display = '';
+
+  try {
+    const data = await api('GET', `/api/competitors/${id}/subcategories?vendor=${encodeURIComponent(handle)}`);
+    if (subSel) {
+      subSel.innerHTML = '<option value="">All — no sub-category filter</option>';
+      (data.subcategories || []).forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.filterParam;
+        opt.textContent = s.label;
+        subSel.appendChild(opt);
+      });
+    }
+    if (subField) subField.style.display = data.subcategories?.length ? '' : 'none';
+  } catch(e) {
+    if (subSel) subSel.innerHTML = '<option value="">All — no sub-category filter</option>';
+    if (subField) subField.style.display = 'none';
+  } finally {
+    if (subSel) subSel.disabled = false;
+  }
+  updateScanUrlPreview();
+}
+
+function getScanVendor() {
+  const sel    = document.getElementById('scanVendorSelect');
+  const manual = document.getElementById('scanVendorManual');
+  if (manual?.style?.display !== 'none') {
+    const v = (manual?.value || '').trim();
+    return v ? { handle: v.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''), name: v } : null;
+  }
+  const handle = sel?.value || '';
+  if (!handle) return null;
+  const name = sel?.options[sel?.selectedIndex]?.dataset?.name || sel?.options[sel?.selectedIndex]?.textContent || handle;
+  return { handle, name };
+}
+
+function updateScanUrlPreview() {
   const id  = document.getElementById('scan-competitor').value;
   const c   = S.competitors.find(x => x.id === id);
-  const box = document.getElementById('scanCompetitorPreview');
-  const txt = document.getElementById('scanPreviewText');
-  const vpw = document.getElementById('vendorPickerWrap');
-  if (c) {
-    const brandStr = c.brands?.length ? c.brands.join(', ') : 'all brands';
-    txt.textContent = `Will scan ${c.url} for ${brandStr}.`;
-    box.style.display = '';
-    if (vpw) vpw.style.display = '';
-  } else {
-    box.style.display = 'none';
-    if (vpw) vpw.style.display = 'none';
-  }
-}
-
-// Load vendors from Shopify and populate the picker
-async function loadVendors() {
-  const btn = document.getElementById('loadVendorsBtn');
-  const sel = document.getElementById('vendorPicker');
-  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
-  try {
-    const data = await api('GET', '/api/vendors');
-    sel.innerHTML = '<option value="">— pick a vendor to add —</option>';
-    (data.vendors || []).sort().forEach(v => {
-      const opt = document.createElement('option');
-      opt.value = v; opt.textContent = v;
-      sel.appendChild(opt);
-    });
-    showToast(`Loaded ${data.vendors?.length || 0} vendors`);
-  } catch(e) {
-    showToast('Could not load vendors: ' + e.message, 'error');
-  } finally {
-    if (btn) { btn.disabled = false; btn.innerHTML = '<svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg> Load vendors'; }
-  }
-}
-
-// Add selected vendor to the brand tag input
-function addVendorFromPicker() {
-  const sel = document.getElementById('vendorPicker');
-  const vendor = sel.value;
-  if (!vendor) return;
-  if (!S.scanBrands.includes(vendor)) {
-    S.scanBrands.push(vendor);
-    renderBrandTags('scanBrandTagsWrap', S.scanBrands, 'scanBrandTagInput');
-    showToast(`Added "${vendor}" to brand filter`);
-  }
-  sel.value = ''; // reset picker
+  const v   = getScanVendor();
+  const box = document.getElementById('scanUrlPreview');
+  const txt = document.getElementById('scanUrlPreviewText');
+  if (!c || !v) { if (box) box.style.display = 'none'; return; }
+  const subParam = document.getElementById('scanSubcategorySelect')?.value || '';
+  const pathPrefix = c.url.includes('amxsuperstores.com.au') ? 'brands'
+                   : c.url.includes('mcas.com.au')           ? 'brand'
+                   : c.url.includes('roadstore.com.au')      ? 'brand'
+                   : 'collections';
+  let url = `${c.url.replace(/\/$/, '')}/${pathPrefix}/${v.handle}`;
+  if (subParam) url += subParam.startsWith('#') ? `/${subParam}` : `?${subParam}`;
+  if (txt) txt.textContent = `Will scrape: ${url}`;
+  if (box) box.style.display = '';
 }
 
 async function startScan() {
@@ -1299,30 +1403,31 @@ async function startScan() {
   const c  = S.competitors.find(x => x.id === id);
   if (!c) return showToast('Select a competitor first', 'error');
 
-  const overrideBrands = [...S.scanBrands];
-  const brands      = overrideBrands.length ? overrideBrands : (c.brands || []);
+  const v = getScanVendor();
+  if (!v) return showToast('Select a brand to scan', 'error');
+  const vendorHandle = v.handle;
+  const vendorName   = v.name;
+
+  const subcategoryParam = document.getElementById('scanSubcategorySelect')?.value || '';
   const useCache    = document.getElementById('useCacheCheckbox').checked;
   const maxProducts = parseInt(document.getElementById('maxProductsInput').value) || 20;
-  const maxPages    = parseInt(document.getElementById('maxPagesInput').value)    || 5;
 
-  // Show progress UI
   document.getElementById('scanConfig').style.display = 'none';
   document.getElementById('scanProgress').style.display = '';
   document.getElementById('scanDone').style.display    = 'none';
   resetCancelBtn();
   updateScanProgress({ progress: 0, message: 'Starting…', status: 'scraping' });
   setTerminalActive(true);
-  renderTerminal(); // flush buffered logs into now-visible terminal
+  renderTerminal();
 
   try {
     const { jobId } = await api('POST', '/api/scrape', {
-      competitorUrl:  c.url,
-      competitorName: c.name,
-      competitorId:   c.id,
-      brands,
+      competitorId: c.id,
+      vendor:       vendorName,
+      vendorHandle,
+      subcategoryParam,
       useCache,
       maxProducts,
-      maxPages,
     });
     S.currentJob = jobId;
     pollJob(jobId);
@@ -1343,6 +1448,7 @@ function pollJob(jobId) {
         if (job.status === 'done' || job.status === 'cancelled') {
           S.lastResult = job.result;
           S.currentScanId = null; // fresh scan — no history ID yet (saved by backend)
+          if (job.status === 'done') loadStats();
           // Ensure variantGaps is always an array
           if (!S.lastResult.variantGaps) S.lastResult.variantGaps = [];
           // Update the Missing sizes badge count
@@ -2631,6 +2737,7 @@ if (partial.length > 0) {
 
     S.draftCount += results.created?.length || 0;
     refreshDashboard();
+    if (results.created?.length) loadStats();
 
     const created = results.created?.length || 0;
 
@@ -2714,8 +2821,7 @@ async function exportExcel(all = false) {
 // TAGS INPUT (reusable)
 // ═══════════════════════════════════════════════════════════════════
 function setupTagInputs() {
-  setupTagInput('brandTagInput', S.addBrands,  'brandTagsWrap');
-  setupTagInput('scanBrandTagInput', S.scanBrands, 'scanBrandTagsWrap');
+  // brand filter removed from scan page
 }
 
 function setupTagInput(inputId, arr, wrapId) {
@@ -2758,9 +2864,7 @@ function renderBrandTags(wrapId, arr, inputId) {
 }
 
 function removeTag(wrapId, inputId, idx) {
-  // Determine which array
-  if (wrapId === 'brandTagsWrap')    { S.addBrands.splice(idx, 1);  renderBrandTags(wrapId, S.addBrands,  inputId); }
-  if (wrapId === 'scanBrandTagsWrap') { S.scanBrands.splice(idx, 1); renderBrandTags(wrapId, S.scanBrands, inputId); }
+  // no removable tag inputs remain
 }
 
 // ═══════════════════════════════════════════════════════════════════

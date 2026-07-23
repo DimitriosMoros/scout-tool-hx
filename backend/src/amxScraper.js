@@ -291,9 +291,9 @@ async function crawlCollections(collectionUrls, brands, onProgress, jobId, maxPr
     console.log('[AMX] Crawling with Puppeteer:', collUrl);
 
     const cleanUrl = new URL(collUrl);
-    const vendor = cleanUrl.searchParams.get('vendor');
-    cleanUrl.search = '';
-    if (vendor) cleanUrl.searchParams.set('vendor', vendor);
+    // Remove only the 'page' param — we set it ourselves per iteration.
+    // All other params (vendor, category, etc.) are preserved for filtering.
+    cleanUrl.searchParams.delete('page');
 
     for (let page = 1; page <= maxPages; page++) {
       if (productUrls.size >= maxProducts) break;
@@ -747,6 +747,131 @@ function extractVendorFromText(text, brands) {
   }
   const first = (text || '').split(/\s+/)[0];
   return (first && /^[A-Z]/.test(first)) ? first : '';
+}
+
+// ── Brand discovery ───────────────────────────────────────────────────────────
+// Paginates through /brands?page=N collecting all brand cards.
+// AMX is a Vue SPA so Puppeteer is required.
+
+export async function discoverCompetitorBrands(baseUrl) {
+  const { existsSync } = await import('fs');
+  const chromePaths = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+  ].filter(Boolean);
+  if (process.env.CHROME_PATH) chromePaths.unshift(process.env.CHROME_PATH);
+  const executablePath = chromePaths.find(p => { try { return existsSync(p); } catch(_) { return false; } });
+  if (!executablePath) throw new Error('Chrome not found for brand discovery');
+
+  const origin  = new URL(baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`).origin;
+  const browser = await puppeteer.launch({
+    executablePath,
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
+    defaultViewport: { width: 1280, height: 900 },
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+
+    const brands = [];
+    const seen   = new Set();
+    let   pageNum = 1;
+
+    while (true) {
+      const url = pageNum === 1 ? `${origin}/brands` : `${origin}/brands?page=${pageNum}`;
+      console.log(`[Discovery AMX] Brands page ${pageNum}: ${url}`);
+      await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+
+      const results = await page.evaluate(() => {
+        const items = [];
+        document.querySelectorAll('.brands-listing-page__list-item a.brand-card').forEach(a => {
+          const href   = a.getAttribute('href') || '';
+          const handle = href.startsWith('/brands/') ? href.slice('/brands/'.length) : '';
+          const name   = a.querySelector('.brands-listing-page__list-item-section')?.textContent?.trim() || '';
+          if (handle && name) items.push({ name, handle });
+        });
+        // Check whether a non-disabled "next page" link exists
+        const nextDisabled = !document.querySelector('.pagination__item.next:not(.pagination__item--disabled)');
+        return { items, nextDisabled };
+      });
+
+      for (const b of results.items) {
+        if (!seen.has(b.handle)) { seen.add(b.handle); brands.push(b); }
+      }
+
+      console.log(`[Discovery AMX] Page ${pageNum}: ${results.items.length} brands (total so far: ${brands.length})`);
+
+      if (results.nextDisabled || results.items.length === 0) break;
+      pageNum++;
+    }
+
+    if (!brands.length) throw new Error('No brands found — AMX brands page structure may have changed');
+    console.log(`[Discovery AMX] Found ${brands.length} brands total`);
+    return brands.sort((a, b) => a.name.localeCompare(b.name));
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
+// ── Subcategory / category discovery ─────────────────────────────────────────
+// AMX shows a "Category" filter panel on brand pages with button-based toggles.
+// Each button is clicked in turn and the resulting Vue Router URL is captured.
+
+export async function discoverCompetitorSubcategories(baseUrl, vendorHandle) {
+  const { existsSync } = await import('fs');
+  const chromePaths = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe',
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+  ].filter(Boolean);
+  if (process.env.CHROME_PATH) chromePaths.unshift(process.env.CHROME_PATH);
+  const executablePath = chromePaths.find(p => { try { return existsSync(p); } catch(_) { return false; } });
+  if (!executablePath) throw new Error('Chrome not found for subcategory discovery');
+
+  const origin   = new URL(baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`).origin;
+  const brandUrl = `${origin}/brands/${vendorHandle}`;
+  const browser  = await puppeteer.launch({
+    executablePath,
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-blink-features=AutomationControlled'],
+    defaultViewport: { width: 1280, height: 900 },
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+
+    console.log(`[Discovery AMX] Subcategories: ${brandUrl}`);
+    await page.goto(brandUrl, { waitUntil: 'networkidle2', timeout: 60000 });
+
+    // Extract all category labels — buttons are Vue click handlers, not links,
+    // so we read them directly without clicking.
+    const labels = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('.categories-filter__list .categories-filter__category span'))
+        .map(s => s.textContent.trim()).filter(Boolean)
+    );
+
+    console.log(`[Discovery AMX] Found ${labels.length} categories for ${vendorHandle}: ${labels.join(', ')}`);
+    if (!labels.length) return [];
+
+    // AMX uses ?categories={slug} where slug is the label lowercased with spaces → hyphens.
+    // e.g. "Adventure Helmets" → categories=adventure-helmets
+    return labels.map(label => ({
+      label,
+      filterParam: `categories=${label.toLowerCase().replace(/\s+/g, '-')}`,
+    }));
+  } finally {
+    await browser.close().catch(() => {});
+  }
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

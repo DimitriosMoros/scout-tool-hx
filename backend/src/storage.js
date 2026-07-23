@@ -20,6 +20,7 @@ const SCRAPED_CACHE_FILE = path.join(DATA_DIR, 'scraped-products.json');
 const DRAFT_STATUS_FILE  = path.join(DATA_DIR, 'draft-status.json');
 const SCAN_HISTORY_FILE  = path.join(DATA_DIR, 'scan-history.json');
 const WATCHLIST_FILE     = path.join(DATA_DIR, 'watchlist.json');
+const STATS_FILE         = path.join(DATA_DIR, 'stats.json');
 
 // Initialize files if they don't exist
 function ensureFile(filepath, defaultData = []) {
@@ -33,6 +34,7 @@ ensureFile(SCRAPED_CACHE_FILE, {});
 ensureFile(DRAFT_STATUS_FILE,  {});
 ensureFile(SCAN_HISTORY_FILE,  {});
 ensureFile(WATCHLIST_FILE,     {});
+ensureFile(STATS_FILE,         { productsScanned: 0, productsMissing: 0, productsUploaded: 0 });
 
 // ═══════════════════════════════════════════════════════════════════════════
 // COMPETITORS
@@ -306,4 +308,59 @@ export function removeWatchlistItems(shop, sourceIds) {
 
 export function clearWatchlistItems(shop) {
   saveWatchlistItems(shop, []);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LIFETIME STATS (device-local, never synced via git)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export function getStats() {
+  try {
+    return JSON.parse(fs.readFileSync(STATS_FILE, 'utf8'));
+  } catch(_) {
+    return { productsScanned: 0, productsUploaded: 0 };
+  }
+}
+
+export function incrementStats(delta) {
+  const stats = getStats();
+  if (delta.productsScanned)  stats.productsScanned  = (stats.productsScanned  || 0) + delta.productsScanned;
+  if (delta.productsMissing)  stats.productsMissing  = (stats.productsMissing  || 0) + delta.productsMissing;
+  if (delta.productsUploaded) stats.productsUploaded = (stats.productsUploaded || 0) + delta.productsUploaded;
+  fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2));
+  return stats;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SITE CATALOG — brand/subcategory data per competitor site, tracked in git
+// Keyed by hostname (e.g. "motoheaven.com.au")
+// ═══════════════════════════════════════════════════════════════════════════
+
+const SITE_CATALOG_FILE = path.join(DATA_DIR, 'site-catalog.json');
+ensureFile(SITE_CATALOG_FILE, {});
+
+function catalogKey(url) {
+  try {
+    return new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+  } catch (_) {
+    return url;
+  }
+}
+
+export function getSiteCatalog(url) {
+  try {
+    const data = JSON.parse(fs.readFileSync(SITE_CATALOG_FILE, 'utf8'));
+    return data[catalogKey(url)] || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+export function saveSiteCatalog(url, updates) {
+  let data = {};
+  try { data = JSON.parse(fs.readFileSync(SITE_CATALOG_FILE, 'utf8')); } catch (_) {}
+  const key  = catalogKey(url);
+  data[key]  = { ...(data[key] || {}), ...updates };
+  fs.writeFileSync(SITE_CATALOG_FILE, JSON.stringify(data, null, 2));
+  return data[key];
 }

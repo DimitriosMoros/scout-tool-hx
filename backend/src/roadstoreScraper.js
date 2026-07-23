@@ -100,9 +100,11 @@ async function resolveFilters(rawUrl) {
   try { u = new URL(rawUrl); } catch { u = new URL(BASE + '/'); }
 
   // #/filter:brand:Bell/filter:adult_size:M — SearchSpring hash format
+  // Searchspring encodes values as $25XX (double-%): replace $25 → % then URL-decode
   const hash = decodeURIComponent(u.hash || '');
   for (const m of hash.matchAll(/filter:([a-z0-9_]+):([^/]+)/gi)) {
-    hashFilters.push([m[1], m[2]]);
+    const decoded = decodeURIComponent(m[2].replace(/\$25/g, '%'));
+    hashFilters.push([m[1], decoded]);
   }
 
   // Category/brand pages embed their background filter in an inline config:
@@ -354,3 +356,94 @@ export async function scrapeRoadstoreProduct(url) {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── Brand discovery ───────────────────────────────────────────────────────────
+// Uses the SearchSpring facet API — no browser required.
+
+export async function discoverCompetitorBrands(baseUrl) {
+  const data = await getJson(
+    `${SS_API}?siteId=hmjh5r&resultsFormat=native&resultsPerPage=0`
+  );
+  const brandFacet = (data.facets || []).find(f => f.field === 'brand');
+  const values     = brandFacet?.values || [];
+  if (!values.length) throw new Error('No brand facet in SearchSpring response');
+
+  const brands = values.map(v => {
+    const name   = v.value || '';
+    const handle = name.toLowerCase()
+      .replace(/['']/g, '')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-|-$/g, '');
+    return { name, handle };
+  });
+
+  console.log(`[Discovery Roadstore] Found ${brands.length} brands via SearchSpring API`);
+  return brands.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// ── Subcategory discovery ─────────────────────────────────────────────────────
+// AngularJS renders the #filter-brand_category list client-side — Puppeteer needed.
+// The filterParam is the raw hash fragment (e.g. #/filter:brand_category:...).
+
+export async function discoverCompetitorSubcategories(baseUrl, vendorHandle) {
+  const { existsSync } = await import('fs');
+  const origin = new URL(baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`).origin;
+  const url    = `${origin}/brand/${vendorHandle}/`;
+
+  const chromePaths = [
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+    process.env.LOCALAPPDATA && (process.env.LOCALAPPDATA + '\\Google\\Chrome\\Application\\chrome.exe'),
+    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium-browser',
+  ].filter(Boolean);
+
+  let executablePath = null;
+  for (const p of chromePaths) { if (existsSync(p)) { executablePath = p; break; } }
+  if (!executablePath) { console.log('[Discovery Roadstore] Chrome not found'); return []; }
+
+  const { default: puppeteer } = await import('puppeteer-core');
+  const browser = await puppeteer.launch({
+    executablePath, headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    defaultViewport: { width: 1280, height: 900 },
+  });
+
+  try {
+    const page = await browser.newPage();
+    await page.setUserAgent(HEADERS['User-Agent']);
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+    await sleep(2000); // let AngularJS render the facets
+
+    const extract = () => page.evaluate(() => {
+      // Exclude filtered-link (AngularJS history) and filtered-current (active span)
+      const links = document.querySelectorAll(
+        '#filter-brand_category li:not(.filtered-link):not(.filtered-current) a'
+      );
+      const seen = new Set();
+      return Array.from(links).map(a => {
+        const hash  = '#' + a.href.split('#').slice(1).join('#');
+        const label = a.getAttribute('title') || a.textContent.replace(/\s*\(\d+\)\s*$/, '').trim();
+        if (!hash.includes('filter:brand_category:')) return null;
+        if (seen.has(hash)) return null;
+        seen.add(hash);
+        return { label, filterParam: hash };
+      }).filter(Boolean);
+    });
+
+    let subcategories = await extract();
+    if (subcategories.length === 0) {
+      await sleep(3500);
+      subcategories = await extract();
+    }
+
+    console.log(`[Discovery Roadstore] ${subcategories.length} subcategories for ${vendorHandle}`);
+    return subcategories;
+  } catch (e) {
+    console.log(`[Discovery Roadstore] Puppeteer failed: ${e.message.slice(0, 80)}`);
+    return [];
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}

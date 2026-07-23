@@ -9,7 +9,7 @@ backend/data/watchlist.json
 backend/data/scan-history.json
 backend/data/scraped-products.json
 backend/data/draft-status.json
-backend/data/draft-status.json
+backend/data/stats.json
 
 # Dependencies
 node_modules/

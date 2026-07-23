@@ -334,3 +334,119 @@ async function fetchProducts(page, handles, brands, onProgress, jobId, maxProduc
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── Brand discovery ───────────────────────────────────────────────────────────
+// Navigates to {baseUrl}/collections which renders an A–Z brand listing.
+// Parses every .brand-item link — handles both /collections/{handle} and
+// /collections/vendors?q=Name formats so all brands are returned correctly.
+
+export async function discoverCompetitorBrands(baseUrl) {
+  const browser = await openBrowser();
+  const proxyUrl = process.env.SCRAPER_PROXY || null;
+  try {
+    const page = await newPage(browser, proxyUrl);
+    const url  = `${baseUrl}/collections`;
+    console.log(`[Discovery] Loading brands page: ${url}`);
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+
+    const brands = await page.evaluate(() => {
+      const seen    = new Set();
+      const results = [];
+
+      // The brands page uses [data-brands-list] .brand-item a
+      const links = document.querySelectorAll(
+        '[data-brands-list] .brand-item a, .brands-list .brand-item a'
+      );
+
+      links.forEach(a => {
+        // Skip items hidden via inline style (e.g. the store's own brand)
+        const li = a.closest('li');
+        if (li?.style?.display === 'none') return;
+
+        const href = a.getAttribute('href') || '';
+        if (!href.includes('/collections/')) return;
+
+        // Preserve everything after /collections/ — could be "agv" or "vendors?q=Acebikes"
+        const handle = href.split('/collections/')[1];
+        if (!handle || seen.has(handle)) return;
+
+        const name = (a.textContent || a.title || '').trim();
+        if (!name) return;
+
+        seen.add(handle);
+        results.push({ name, handle });
+      });
+
+      return results.sort((a, b) => a.name.localeCompare(b.name));
+    });
+
+    if (!brands.length) throw new Error('No brands found — brands page structure may have changed');
+    console.log(`[Discovery] Found ${brands.length} brands`);
+    return brands;
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
+// ── Subcategory / filter discovery ───────────────────────────────────────────
+// Navigates to a brand collection page and parses the filter sidebar for
+// sub_category filter items (label + URL parameter string).
+
+export async function discoverCompetitorSubcategories(baseUrl, vendorHandle) {
+  const browser = await openBrowser();
+  const proxyUrl = process.env.SCRAPER_PROXY || null;
+  try {
+    const page = await newPage(browser, proxyUrl);
+    const url = `${baseUrl}/collections/${vendorHandle}`;
+    console.log(`[Discovery] Subcategories: ${url}`);
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 60000 });
+
+    const subcategories = await page.evaluate(() => {
+      // Collect all sub_category inputs. The page renders the same filters in multiple
+      // containers (sidebar, drawer) — sidebar inputs have no id/label, drawer inputs do.
+      // We scan everything and for each unique filterParam keep the best-labeled entry.
+      const best = new Map();
+
+      document.querySelectorAll('input[data-filter-item-input]').forEach(input => {
+        const name   = input.name || '';
+        const filter = input.dataset.filter || '';
+        if (!name.includes('sub_category') && !filter.includes('sub_category')) return;
+
+        const param = filter || `${name}=${input.value}`;
+        if (!param) return;
+
+        // Already have a good label for this param — skip
+        if (best.get(param)?.hasLabel) return;
+
+        const li = input.closest('[data-filter-list-item]') || input.closest('li');
+
+        // 1. Label span text
+        let labelText = li?.querySelector('.filter-item__label')?.textContent?.trim() || '';
+        // 2. Input id: format filter--{param}--{Label}--{variant}
+        if (!labelText) {
+          const idParts = (input.id || '').split('--');
+          if (idParts.length >= 3) {
+            try { labelText = decodeURIComponent(idParts[2]); } catch(_) { labelText = idParts[2]; }
+          }
+        }
+        // 3. data-item-label on the li (title-cased)
+        if (!labelText) {
+          labelText = (li?.dataset?.itemLabel || '').replace(/(?:^|\s|-)(\S)/g, m => m.toUpperCase());
+        }
+
+        if (labelText) {
+          best.set(param, { label: labelText, filterParam: param, hasLabel: true });
+        } else if (!best.has(param)) {
+          best.set(param, { label: input.value, filterParam: param, hasLabel: false });
+        }
+      });
+
+      return Array.from(best.values()).map(({ label, filterParam }) => ({ label, filterParam }));
+    });
+
+    console.log(`[Discovery] Found ${subcategories.length} subcategories for ${vendorHandle}`);
+    return subcategories;
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}

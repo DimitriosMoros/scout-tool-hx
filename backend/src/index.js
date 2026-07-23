@@ -190,6 +190,10 @@ app.get('/api/product-types', requireAuth, async (req, res) => {
   }
 });
 
+app.get('/api/stats', requireAuth, (req, res) => {
+  res.json(storage.getStats());
+});
+
 // ── Tag Manager — search host products & bulk-add tags ────────────────────────
 app.get('/api/store-products', requireAuth, async (req, res) => {
   try {
@@ -238,13 +242,135 @@ app.post('/api/suggest-tags', requireAuth, (req, res) => {
   res.json({ suggestions });
 });
 
+// ── Discovery module router ───────────────────────────────────────────────────
+async function getDiscoveryModule(competitorUrl) {
+  if (competitorUrl.includes('amxsuperstores.com.au')) return import('./amxScraper.js');
+  if (competitorUrl.includes('mcas.com.au'))           return import('./mcasScraper.js');
+  if (competitorUrl.includes('roadstore.com.au'))      return import('./roadstoreScraper.js');
+  return import('./motoheavenScraper.js');
+}
+
+// ── Competitor brand discovery ────────────────────────────────────────────────
+const BRAND_REFRESH_INTERVAL = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+app.get('/api/competitors/:id/brands', requireAuth, async (req, res) => {
+  const competitor = storage.getCompetitors(req.shop).find(c => c.id === req.params.id);
+  if (!competitor) return res.status(404).json({ error: 'Not found' });
+
+  const forceRefresh = !!req.query.refresh;
+  const catalog      = storage.getSiteCatalog(competitor.url);
+  const hasCached    = catalog?.brands?.length > 0;
+  const isStale      = !catalog?.lastChecked ||
+    (Date.now() - new Date(catalog.lastChecked).getTime() > BRAND_REFRESH_INTERVAL);
+
+  // Serve cached data immediately; trigger background refresh if stale
+  if (hasCached && !forceRefresh) {
+    const payload = { brands: catalog.brands, lastChecked: catalog.lastChecked, cached: true };
+    if (isStale) payload.stale = true;
+    res.json(payload);
+
+    if (isStale) {
+      console.log(`[Discovery] Brands stale for ${competitor.url} — refreshing in background`);
+      setImmediate(async () => {
+        try {
+          const { discoverCompetitorBrands } = await getDiscoveryModule(competitor.url);
+          const brands = await discoverCompetitorBrands(competitor.url);
+          storage.saveSiteCatalog(competitor.url, { brands, lastChecked: new Date().toISOString() });
+          console.log(`[Discovery] Background brand refresh done: ${brands.length} brands`);
+        } catch (err) {
+          console.error('[Discovery] Background brand refresh failed:', err.message);
+        }
+      });
+    }
+    return;
+  }
+
+  // No cache or forced refresh — synchronous discovery (user waits)
+  try {
+    console.log(`[Discovery] Discovering brands for ${competitor.name}`);
+    const { discoverCompetitorBrands } = await getDiscoveryModule(competitor.url);
+    const brands      = await discoverCompetitorBrands(competitor.url);
+    const lastChecked = new Date().toISOString();
+    // When forcing a full refresh, also wipe subcategory cache so stale subcats get re-discovered lazily
+    const subcategoryUpdates = forceRefresh ? { subcategories: {} } : {};
+    storage.saveSiteCatalog(competitor.url, { brands, lastChecked, ...subcategoryUpdates });
+    res.json({ brands, lastChecked });
+  } catch (err) {
+    console.error('[Discovery] Brands error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Competitor subcategory discovery ──────────────────────────────────────────
+app.get('/api/competitors/:id/subcategories', requireAuth, async (req, res) => {
+  const { vendor } = req.query;
+  if (!vendor) return res.status(400).json({ error: 'vendor required' });
+
+  const competitor = storage.getCompetitors(req.shop).find(c => c.id === req.params.id);
+  if (!competitor) return res.status(404).json({ error: 'Not found' });
+
+  const cacheKey = vendor.toLowerCase();
+  const catalog  = storage.getSiteCatalog(competitor.url);
+  const cached   = catalog?.subcategories?.[cacheKey];
+
+  if (cached) {
+    console.log(`[Discovery] Serving ${cached.length} cached subcategories for ${vendor}`);
+    return res.json({ subcategories: cached, cached: true });
+  }
+
+  // No cache — run Puppeteer to discover subcategories for this brand
+  try {
+    console.log(`[Discovery] Discovering subcategories for ${competitor.name}/${vendor}`);
+    const { discoverCompetitorSubcategories } = await getDiscoveryModule(competitor.url);
+    const subcategories = await discoverCompetitorSubcategories(competitor.url, vendor);
+    const existing      = catalog?.subcategories || {};
+    storage.saveSiteCatalog(competitor.url, {
+      subcategories: { ...existing, [cacheKey]: subcategories },
+    });
+    res.json({ subcategories });
+  } catch (err) {
+    console.error('[Discovery] Subcategories error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/scrape', requireAuth, (req, res) => {
-  const { competitorUrl, competitorName, brands, competitorId, useCache, maxProducts, maxPages } = req.body;
-  if (!competitorUrl) return res.status(400).json({ error: 'competitorUrl required' });
+  const { competitorId, vendor, vendorHandle, subcategoryParam, useCache, maxProducts } = req.body;
+  if (!competitorId) return res.status(400).json({ error: 'competitorId required' });
+  if (!vendor) return res.status(400).json({ error: 'vendor required' });
+
+  const competitor = storage.getCompetitors(req.shop).find(c => c.id === competitorId);
+  if (!competitor) return res.status(404).json({ error: 'Competitor not found' });
+
+  // Build collection URL — path prefix varies by site
+  const slug       = vendorHandle || vendor.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+  let pathPrefix = 'collections';
+  if (competitor.url.includes('amxsuperstores.com.au')) pathPrefix = 'brands';
+  else if (competitor.url.includes('mcas.com.au'))      pathPrefix = 'brand';
+  else if (competitor.url.includes('roadstore.com.au')) pathPrefix = 'brand';
+  const baseCompUrl = `${competitor.url.replace(/\/$/, '')}/${pathPrefix}/${slug}`;
+  let competitorUrl;
+  if (subcategoryParam) {
+    if (subcategoryParam.startsWith('#')) {
+      // Hash-based filter (Road Store SearchSpring) — append directly after trailing slash
+      competitorUrl = `${baseCompUrl}/${subcategoryParam}`;
+    } else {
+      const url = new URL(baseCompUrl);
+      new URLSearchParams(subcategoryParam).forEach((v, k) => url.searchParams.set(k, v));
+      competitorUrl = url.toString();
+    }
+  } else {
+    competitorUrl = baseCompUrl;
+  }
+
+  const competitorName = competitor.name;
+  const brands         = [vendor];
+
   const jobId = Date.now().toString();
   jobStore.create(jobId, { shop: req.shop, competitorUrl, competitorName, brands });
-  runScrapeJob(jobId, req.shop, req.shopToken, { competitorUrl, competitorName, brands, competitorId, useCache, maxProducts, maxPages })
-    .catch(err => jobStore.fail(jobId, err.message));
+  runScrapeJob(jobId, req.shop, req.shopToken, {
+    competitorUrl, competitorName, brands, competitorId, useCache, maxProducts, explicitVendor: vendor,
+  }).catch(err => jobStore.fail(jobId, err.message));
   res.json({ jobId });
 });
 
@@ -254,7 +380,7 @@ app.get('/api/scrape/:jobId', requireAuth, (req, res) => {
   res.json(job);
 });
 
-async function runScrapeJob(jobId, shop, token, { competitorUrl, competitorName, brands, competitorId, useCache, maxProducts, maxPages }) {
+async function runScrapeJob(jobId, shop, token, { competitorUrl, competitorName, brands, competitorId, useCache, maxProducts, explicitVendor }) {
   try {
     jobStore.update(jobId, { status: 'scraping', progress: 5, message: `Connecting to ${competitorName || competitorUrl}...` });
 
@@ -267,6 +393,15 @@ async function runScrapeJob(jobId, shop, token, { competitorUrl, competitorName,
       if (cached.products && cached.products.length) {
         cachedProducts = cached.products;
         console.log(`[Cache] Found ${cachedProducts.length} previously scraped products from ${cached.scrapedAt}`);
+        // When scanning a specific vendor, ignore cached products from other vendors
+        if (explicitVendor) {
+          const evLower = explicitVendor.toLowerCase();
+          const filtered = cachedProducts.filter(p => (p.vendor || '').toLowerCase() === evLower);
+          if (filtered.length !== cachedProducts.length) {
+            console.log(`[Cache] Filtered to vendor "${explicitVendor}": ${filtered.length} of ${cachedProducts.length} cached products`);
+          }
+          cachedProducts = filtered;
+        }
       }
     }
 
@@ -280,7 +415,7 @@ async function runScrapeJob(jobId, shop, token, { competitorUrl, competitorName,
 
       const scrapeOptions = {
         maxProducts: maxProducts || 20,
-        maxPages:    maxPages    || 5,
+        maxPages:    20,
         skipIds:     useCache && cachedIds.size ? cachedIds : new Set(),
       };
       console.log(`[Scrape] Options: maxProducts=${scrapeOptions.maxProducts}, maxPages=${scrapeOptions.maxPages}, skipIds=${scrapeOptions.skipIds.size}`);
@@ -292,6 +427,8 @@ async function runScrapeJob(jobId, shop, token, { competitorUrl, competitorName,
       if (!freshProducts.length && !cachedProducts.length) {
         return jobStore.fail(jobId, 'No products found on competitor site.');
       }
+
+      if (freshProducts.length) storage.incrementStats({ productsScanned: freshProducts.length });
 
       // Merge: cached products + fresh products, deduped by sourceId/handle
       const seenIds = new Set();
@@ -329,38 +466,34 @@ async function runScrapeJob(jobId, shop, token, { competitorUrl, competitorName,
       };
     });
 
-    // ── Fetch ONLY the vendors present in scraped products from Shopify ─────
-    // This ensures we never pull the whole catalogue — only specific vendors
-    // Apply vendor aliases so we fetch "Quadlock" not "Quad" from Shopify
-    const VENDOR_ALIASES = {
-      'quad':      'Quadlock',
-      'quad lock': 'Quadlock',
-    };
-    const scrapedVendors = [...new Set(
-      competitorProducts.map(p => {
-        const v = (p.vendor || '').trim();
-        return VENDOR_ALIASES[v.toLowerCase()] || v;
-      }).filter(Boolean)
-    )];
-
-    // Fitment accessories are often filed in the host store under the bike
-    // make rather than the accessory brand (e.g. Evotech bobbins stored with
-    // vendor "Yamaha"). Fetch any makes mentioned in scraped titles too, so
-    // SKU/title matching can see those products.
-    const makeVendors = [...new Set(
-      competitorProducts.flatMap(p => MOTO_MAKES.filter(m => {
-        const escaped = m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/-/g, '[\\-\\s]');
-        return new RegExp(`\\b${escaped}\\b`, 'i').test(p.title || '');
-      }))
-    )];
-    if (makeVendors.length) console.log(`[Compare] Bike makes in titles — also fetching vendors: ${makeVendors.join(', ')}`);
-
-    const allVendors = [...new Set([...scrapedVendors, ...makeVendors])];
-    const vendorsToFetch = allVendors.length > 0 ? allVendors
-      : (brands && brands.length ? brands : null);
-
-    if (!vendorsToFetch || !vendorsToFetch.length) {
-      return jobStore.fail(jobId, 'Could not determine vendor names from scraped products. Add a brand filter and try again.');
+    // ── Determine which vendors to fetch from Shopify ────────────────────────
+    let vendorsToFetch;
+    if (explicitVendor) {
+      // User chose a specific vendor at scan time — fetch only that vendor.
+      // Skipping auto-discovery prevents pulling unrelated brands from Shopify.
+      vendorsToFetch = [explicitVendor];
+      console.log(`[Compare] Explicit vendor — fetching only: ${explicitVendor}`);
+    } else {
+      // Legacy path: auto-discover vendors from scraped product records
+      const VENDOR_ALIASES = { 'quad': 'Quadlock', 'quad lock': 'Quadlock' };
+      const scrapedVendors = [...new Set(
+        competitorProducts.map(p => {
+          const v = (p.vendor || '').trim();
+          return VENDOR_ALIASES[v.toLowerCase()] || v;
+        }).filter(Boolean)
+      )];
+      const makeVendors = [...new Set(
+        competitorProducts.flatMap(p => MOTO_MAKES.filter(m => {
+          const escaped = m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/-/g, '[\\-\\s]');
+          return new RegExp(`\\b${escaped}\\b`, 'i').test(p.title || '');
+        }))
+      )];
+      if (makeVendors.length) console.log(`[Compare] Bike makes in titles — also fetching vendors: ${makeVendors.join(', ')}`);
+      const allVendors = [...new Set([...scrapedVendors, ...makeVendors])];
+      vendorsToFetch = allVendors.length > 0 ? allVendors : (brands?.length ? brands : null);
+      if (!vendorsToFetch?.length) {
+        return jobStore.fail(jobId, 'Could not determine vendor names from scraped products.');
+      }
     }
 
     console.log(`[Compare] Fetching Shopify products for vendors: ${vendorsToFetch.join(', ')}`);
@@ -373,6 +506,8 @@ async function runScrapeJob(jobId, shop, token, { competitorUrl, competitorName,
 
     jobStore.update(jobId, { progress: 70, message: 'Running gap analysis...' });
     const { missing, matched, summary, variantGaps } = gapAnalysis(competitorProducts, hostProducts, brands);
+
+    if (missing.length) storage.incrementStats({ productsMissing: missing.length });
 
     const draftStatus = storage.getDraftStatus(shop);
     missing.forEach(p => { p.isDraft = draftStatus[p.sourceId] || false; });
@@ -401,7 +536,10 @@ app.post('/api/create-drafts', requireAuth, async (req, res) => {
       .filter(p => createdTitles.has(p.title))
       .map(p => p.sourceId)
       .filter(Boolean);
-    if (successfulIds.length) storage.markAsDraft(req.shop, successfulIds);
+    if (successfulIds.length) {
+      storage.markAsDraft(req.shop, successfulIds);
+      storage.incrementStats({ productsUploaded: successfulIds.length });
+    }
     res.json(results);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });

@@ -720,3 +720,95 @@ async function scrapeMCASProductPage(url, brands, currentNum, totalNum) {
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ── Brand discovery ───────────────────────────────────────────────────────────
+// Scrapes the /brands/ listing page for all brand names + handles.
+
+export async function discoverCompetitorBrands(baseUrl) {
+  const origin = new URL(baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`).origin;
+  const brandsUrl = `${origin}/brands/`;
+
+  // Try static fetch first (faster)
+  let html = await fetchPage(brandsUrl);
+
+  // Fall back to Puppeteer if the page requires JS
+  if (!html || !html.includes('/brands/')) {
+    const session = await openPuppeteerPage(brandsUrl, 60000);
+    if (!session) throw new Error('Could not load MCAS brands page');
+    try {
+      html = await session.page.content();
+    } finally {
+      await session.browser.close().catch(() => {});
+    }
+  }
+
+  const $ = cheerio.load(html);
+  const brands = [];
+  const seen   = new Set();
+
+  $('a[href]').each((_, el) => {
+    const href  = $(el).attr('href') || '';
+    const clean = href.split('?')[0];
+    // MCAS uses /brand/{handle}/ (singular)
+    const m = clean.match(/\/brand\/([a-z0-9][a-z0-9-]*)\/?$/i);
+    if (!m) return;
+    const handle = m[1].toLowerCase();
+    if (seen.has(handle)) return;
+    seen.add(handle);
+    const name = $(el).text().replace(/\s+/g, ' ').trim();
+    if (name) brands.push({ name, handle });
+  });
+
+  if (!brands.length) throw new Error('No brands found on MCAS brands page — structure may have changed');
+  console.log(`[Discovery MCAS] Found ${brands.length} brands`);
+  return brands.sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// ── Subcategory discovery ─────────────────────────────────────────────────────
+// Loads the brand page with "All Categories" expanded via Puppeteer and extracts
+// the nested category labels from the Findify widget DOM.
+// filterParam mirrors the URL format MCAS uses: filters[category1][0][0]={label}
+
+export async function discoverCompetitorSubcategories(baseUrl, vendorHandle) {
+  const origin = new URL(baseUrl.startsWith('http') ? baseUrl : `https://${baseUrl}`).origin;
+  // This URL is what MCAS uses when you click "All Categories" on a brand page
+  const url = `${origin}/brand/${vendorHandle}/?filters%5Bcategory1%5D%5B0%5D%5B0%5D=All%20Products`;
+
+  console.log(`[Discovery MCAS] Subcategories via Puppeteer: ${url}`);
+
+  const session = await openPuppeteerPage(url, 60000);
+  if (!session) {
+    console.log('[Discovery MCAS] Puppeteer unavailable — cannot discover subcategories');
+    return [];
+  }
+
+  try {
+    await sleep(1500); // let Findify widget finish rendering
+
+    const labels = await session.page.evaluate(() => {
+      const items = document.querySelectorAll(
+        '.findify-components--category-facet__nested .findify-components--category-facet__content'
+      );
+      return Array.from(items).map(el => {
+        // Get only the direct text node — ignore SVG children
+        return Array.from(el.childNodes)
+          .filter(n => n.nodeType === Node.TEXT_NODE)
+          .map(n => n.textContent.trim())
+          .join('').trim();
+      }).filter(Boolean);
+    });
+
+    const subcategories = labels.map(label => ({
+      label,
+      filterParam: `filters[category1][0][0]=${label}`,
+    }));
+
+    console.log(`[Discovery MCAS] ${subcategories.length} categories for ${vendorHandle}: ${labels.join(', ')}`);
+    return subcategories;
+  } catch (e) {
+    console.log(`[Discovery MCAS] Puppeteer extraction failed: ${e.message.slice(0, 80)}`);
+    return [];
+  } finally {
+    await session.browser.close().catch(() => {});
+  }
+}
