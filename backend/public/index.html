@@ -919,12 +919,6 @@ tr:hover td { background: var(--surface2); }
           </button>
         </div>
 
-        <!-- Background auto-recheck status -->
-        <div id="watchlistAutoRecheckStatus" style="display:none;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:12px;display:none;align-items:center;gap:10px;font-size:13px;color:var(--text2)">
-          <svg class="spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
-          <span id="watchlistAutoRecheckMsg">Auto-rechecking watchlist for restocked items…</span>
-        </div>
-
         <!-- Rescrape progress (shown while rescraping) -->
         <div id="watchlistRescrapeProgress" style="display:none" class="alert alert-info mb-4">
           <svg class="spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
@@ -1240,12 +1234,7 @@ async function init() {
   loadChangelog();
   setupTagInputs();
   loadAndRenderHistory();
-  // Load watchlist, update badge, then kick off a silent background recheck
-  // after 3s so the UI finishes rendering before network calls start
-  getWatchlist().then(items => {
-    updateWatchlistBadge();
-    if (items.length) setTimeout(watchlistAutoRecheck, 3000);
-  });
+  getWatchlist().then(updateWatchlistBadge);
 }
 
 async function loadStats() {
@@ -2123,10 +2112,6 @@ async function rescrapeItems(itemsToRescrape, { background = false } = {}) {
   for (let i = 0; i < itemsToRescrape.length; i++) {
     const w = itemsToRescrape[i];
     if (!background && msg) msg.textContent = `Rechecking ${i + 1}/${itemsToRescrape.length}: ${w.title}…`;
-    if (background) {
-      const statusMsg = document.getElementById('watchlistAutoRecheckMsg');
-      if (statusMsg) statusMsg.textContent = `Auto-rechecking ${i + 1} of ${itemsToRescrape.length}: ${w.title}…`;
-    }
 
     try {
       const result = await api('POST', '/api/rescrape-product', { url: w.sourceUrl, sourceId: w.sourceId });
@@ -2206,23 +2191,6 @@ async function rescrapeItems(itemsToRescrape, { background = false } = {}) {
   } else if (updated > 0) {
     showToast(`Recheck complete — ${updated} product${updated !== 1 ? 's' : ''} checked`);
   }
-}
-
-// ── Auto-recheck all watchlist items on app launch ────────────────────────────
-async function watchlistAutoRecheck() {
-  const items = await getWatchlist();
-  if (!items.length) return;
-
-  const statusEl = document.getElementById('watchlistAutoRecheckStatus');
-  const btnEl    = document.getElementById('recheckAllBtn');
-
-  if (statusEl) statusEl.style.display = 'flex';
-  if (btnEl)    btnEl.disabled = true;
-
-  await rescrapeItems(items, { background: true });
-
-  if (statusEl) statusEl.style.display = 'none';
-  if (btnEl)    btnEl.disabled = false;
 }
 
 // ── Manual recheck all ────────────────────────────────────────────────────────
