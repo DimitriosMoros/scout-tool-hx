@@ -7,7 +7,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { scrapeCompetitor } from './scraper.js';
 import { gapAnalysis } from './gapAnalysis.js';
-import { addProductTags, createDraftProducts, getShopifyProducts, getToken, initToken, searchShopifyProducts } from './shopify.js';
+import { addProductTags, removeProductTags, createDraftProducts, getShopifyProducts, getToken, initToken, searchShopifyProducts } from './shopify.js';
 import { exportToExcel } from './excelExport.js';
 import { MOTO_MAKES, generateTags } from './utils.js';
 import { jobStore } from './jobStore.js';
@@ -219,6 +219,97 @@ app.post('/api/store-products/add-tags', requireAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.post('/api/store-products/remove-tags', requireAuth, async (req, res) => {
+  try {
+    const { productIds, tags } = req.body;
+    if (!Array.isArray(productIds) || !productIds.length) return res.status(400).json({ error: 'productIds required' });
+    const cleanTags = (Array.isArray(tags) ? tags : []).map(t => String(t).trim()).filter(Boolean);
+    if (!cleanTags.length) return res.status(400).json({ error: 'At least one tag required' });
+
+    console.log(`[TagManager] Removing [${cleanTags.join(', ')}] from ${productIds.length} products`);
+    const result = await removeProductTags(req.shop, req.shopToken, productIds, cleanTags);
+    res.json(result);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// ── AI description generator ──────────────────────────────────────────────────
+app.post('/api/generate-descriptions', requireAuth, async (req, res) => {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: 'ANTHROPIC_API_KEY is not configured in .env' });
+
+  const { products } = req.body;
+  if (!Array.isArray(products) || !products.length) return res.status(400).json({ error: 'products array required' });
+
+  // Strip internal taxonomy tags — keep only human-readable ones for AI context
+  const INTERNAL_TAG = /^(YEAR_|MODEL_|MAKE_|Colour_|Site_|Scraped$)/i;
+  function contextTags(tagStr) {
+    return (tagStr || '').split(',').map(t => t.trim()).filter(t => t && !INTERNAL_TAG.test(t)).join(', ');
+  }
+
+  const results = [];
+  const failed  = [];
+  const BATCH   = 5;
+
+  for (let i = 0; i < products.length; i += BATCH) {
+    const batch = products.slice(i, i + BATCH);
+
+    const productList = batch.map((p, idx) =>
+      `[${idx + 1}] ID: ${p.sourceId}\nTitle: ${p.title}\nVendor: ${p.vendor || ''}\nType: ${p.productType || ''}\nTags: ${contextTags(p.tags)}`
+    ).join('\n\n');
+
+    const prompt = `You write SEO-optimised product descriptions for an Australian motorcycle parts and accessories online store.
+
+For each numbered product below, write a compelling HTML description that:
+- Is 150–220 words
+- Naturally works in the make, model, year range, and product type as search keywords
+- Highlights material, performance benefits, and fitment specifics
+- Uses Australian English spelling (e.g. "colour" not "color")
+- Is structured as: one opening <p>, a <ul> with 4–5 bullet points, one short closing <p> summarising fitment
+- Does NOT mention price, availability, or start with "Introducing" / "Looking for"
+- Sounds authoritative and passionate about motorcycles
+
+Products:
+${productList}
+
+Respond with ONLY a valid JSON array — no markdown fences, no extra text:
+[{"sourceId":"...","description":"<p>...</p><ul><li>...</li></ul><p>...</p>"},...]`;
+
+    try {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key':         apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type':      'application/json',
+        },
+        body: JSON.stringify({
+          model:      'claude-haiku-4-5-20251001',
+          max_tokens: 4096,
+          messages:   [{ role: 'user', content: prompt }],
+        }),
+      });
+
+      if (!r.ok) throw new Error(`Anthropic API ${r.status}: ${await r.text()}`);
+      const data = await r.json();
+      const text = data.content?.[0]?.text || '';
+
+      const jsonMatch = text.match(/\[[\s\S]*\]/);
+      if (!jsonMatch) throw new Error('No JSON array in AI response');
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      results.push(...parsed);
+    } catch (e) {
+      console.error(`[GenDesc] Batch ${i / BATCH + 1} failed:`, e.message);
+      batch.forEach(p => failed.push({ sourceId: p.sourceId, error: e.message }));
+    }
+
+    // Brief pause between batches to avoid rate limiting
+    if (i + BATCH < products.length) await new Promise(r => setTimeout(r, 500));
+  }
+
+  res.json({ results, failed });
+});
+
 app.post('/api/suggest-tags', requireAuth, (req, res) => {
   const { products } = req.body;
   if (!Array.isArray(products) || !products.length) return res.status(400).json({ error: 'products required' });
@@ -247,12 +338,12 @@ async function getDiscoveryModule(competitorUrl) {
   if (competitorUrl.includes('amxsuperstores.com.au')) return import('./amxScraper.js');
   if (competitorUrl.includes('mcas.com.au'))           return import('./mcasScraper.js');
   if (competitorUrl.includes('roadstore.com.au'))      return import('./roadstoreScraper.js');
+  if (competitorUrl.includes('bikebiz.com.au'))             return import('./bikebizScraper.js');
+  if (competitorUrl.includes('vandemonperformance.com.au')) return import('./vandemonScraper.js');
   return import('./motoheavenScraper.js');
 }
 
 // ── Competitor brand discovery ────────────────────────────────────────────────
-const BRAND_REFRESH_INTERVAL = 7 * 24 * 60 * 60 * 1000; // 7 days
-
 app.get('/api/competitors/:id/brands', requireAuth, async (req, res) => {
   const competitor = storage.getCompetitors(req.shop).find(c => c.id === req.params.id);
   if (!competitor) return res.status(404).json({ error: 'Not found' });
@@ -260,29 +351,10 @@ app.get('/api/competitors/:id/brands', requireAuth, async (req, res) => {
   const forceRefresh = !!req.query.refresh;
   const catalog      = storage.getSiteCatalog(competitor.url);
   const hasCached    = catalog?.brands?.length > 0;
-  const isStale      = !catalog?.lastChecked ||
-    (Date.now() - new Date(catalog.lastChecked).getTime() > BRAND_REFRESH_INTERVAL);
 
-  // Serve cached data immediately; trigger background refresh if stale
+  // Serve cached data immediately; only re-fetch when user explicitly requests it
   if (hasCached && !forceRefresh) {
-    const payload = { brands: catalog.brands, lastChecked: catalog.lastChecked, cached: true };
-    if (isStale) payload.stale = true;
-    res.json(payload);
-
-    if (isStale) {
-      console.log(`[Discovery] Brands stale for ${competitor.url} — refreshing in background`);
-      setImmediate(async () => {
-        try {
-          const { discoverCompetitorBrands } = await getDiscoveryModule(competitor.url);
-          const brands = await discoverCompetitorBrands(competitor.url);
-          storage.saveSiteCatalog(competitor.url, { brands, lastChecked: new Date().toISOString() });
-          console.log(`[Discovery] Background brand refresh done: ${brands.length} brands`);
-        } catch (err) {
-          console.error('[Discovery] Background brand refresh failed:', err.message);
-        }
-      });
-    }
-    return;
+    return res.json({ brands: catalog.brands, lastChecked: catalog.lastChecked, cached: true });
   }
 
   // No cache or forced refresh — synchronous discovery (user waits)
@@ -348,11 +420,12 @@ app.post('/api/scrape', requireAuth, (req, res) => {
   if (competitor.url.includes('amxsuperstores.com.au')) pathPrefix = 'brands';
   else if (competitor.url.includes('mcas.com.au'))      pathPrefix = 'brand';
   else if (competitor.url.includes('roadstore.com.au')) pathPrefix = 'brand';
+  else if (competitor.url.includes('bikebiz.com.au'))   pathPrefix = 'brands';
   const baseCompUrl = `${competitor.url.replace(/\/$/, '')}/${pathPrefix}/${slug}`;
   let competitorUrl;
   if (subcategoryParam) {
-    if (subcategoryParam.startsWith('#')) {
-      // Hash-based filter (Road Store SearchSpring) — append directly after trailing slash
+    if (!subcategoryParam.includes('=')) {
+      // Hash fragment (Road Store) or plain path segment (BikeBiz) — append directly
       competitorUrl = `${baseCompUrl}/${subcategoryParam}`;
     } else {
       const url = new URL(baseCompUrl);
@@ -366,10 +439,16 @@ app.post('/api/scrape', requireAuth, (req, res) => {
   const competitorName = competitor.name;
   const brands         = [vendor];
 
+  // Van Demon sells only their own brand — all products have vendor "Vandemon Performance"
+  // regardless of which motorcycle-make collection is being scraped.
+  const explicitVendor = competitor.url.includes('vandemonperformance.com.au')
+    ? 'Vandemon'
+    : vendor;
+
   const jobId = Date.now().toString();
   jobStore.create(jobId, { shop: req.shop, competitorUrl, competitorName, brands });
   runScrapeJob(jobId, req.shop, req.shopToken, {
-    competitorUrl, competitorName, brands, competitorId, useCache, maxProducts, explicitVendor: vendor,
+    competitorUrl, competitorName, brands, competitorId, useCache, maxProducts, explicitVendor,
   }).catch(err => jobStore.fail(jobId, err.message));
   res.json({ jobId });
 });

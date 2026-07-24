@@ -218,6 +218,10 @@ textarea { resize: vertical; min-height: 80px; }
 .badge-blue   { background: var(--blue-bg);   color: var(--blue);   border: 1px solid var(--blue-b); }
 .badge-purple { background: var(--purple-bg); color: var(--purple); border: 1px solid var(--purple-b); }
 .badge-neutral { background: var(--surface2); color: var(--text2);  border: 1px solid var(--border); }
+.tm-card-selected { border: 3px solid #111 !important; box-shadow: 0 0 0 1px #111; }
+.tm-tag-chip { cursor: pointer; transition: color .12s, background .12s, border-color .12s; }
+.tm-tag-chip:hover { color: var(--red); background: var(--red-bg); border-color: var(--red-b); text-decoration: line-through; }
+.tm-tag-remove-queued { color: var(--red) !important; background: var(--red-bg) !important; border-color: var(--red-b) !important; text-decoration: line-through; }
 
 /* ── Tables ──────────────────────────────────────────────────────────────── */
 .table-wrap { overflow-x: auto; }
@@ -529,7 +533,7 @@ tr:hover td { background: var(--surface2); }
         <span class="shop-dot"></span>
         <span class="shop-name" id="shopName">Loading…</span>
       </div>
-      <div>Competitor Scout v1.0</div>
+      <div id="sidebarVersion">Competitor Scout</div>
     </div>
   </nav>
 
@@ -537,7 +541,9 @@ tr:hover td { background: var(--surface2); }
   <div class="main">
     <div class="topbar">
       <div class="topbar-title" id="pageTitle">Dashboard</div>
-      <div class="topbar-actions" id="topbarActions">
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="topbar-actions" id="topbarActions"></div>
+        <button class="btn btn-ghost btn-sm" onclick="openUpdateList()" style="color:var(--accent);font-weight:700;letter-spacing:.02em">UPDATE LIST</button>
         <button class="btn btn-ghost btn-sm" onclick="shutdownApp()" title="Stop the server and close" style="color:var(--text2)">
           <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><line x1="12" y1="2" x2="12" y2="12"/></svg>
           Shut down
@@ -577,7 +583,7 @@ tr:hover td { background: var(--surface2); }
           </div>
         </div>
 
-        <div class="grid-2">
+        <div class="grid-2" style="margin-bottom:16px">
           <div class="card">
             <div class="card-header"><h3>Quick actions</h3></div>
             <div class="card-body flex-col" style="gap:10px">
@@ -671,7 +677,7 @@ tr:hover td { background: var(--surface2); }
                   <select id="scanVendorSelect" onchange="onVendorChange()" disabled style="flex:1">
                     <option value="">— select a competitor first —</option>
                   </select>
-                  <button class="btn btn-secondary btn-sm" id="refreshBrandsBtn" onclick="onCompetitorChange(true)" title="Reload all vendors from the competitor site" style="display:none;flex-shrink:0;gap:4px">
+                  <button class="btn btn-secondary btn-sm" id="refreshBrandsBtn" onclick="confirmReloadVendors()" title="Reload all vendors from the competitor site" style="display:none;flex-shrink:0;gap:4px">
                     <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:14px;height:14px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
                     Reload all vendors
                   </button>
@@ -818,6 +824,14 @@ tr:hover td { background: var(--surface2); }
           <div id="selectionBar" class="select-all-bar" style="display:none">
             <span id="selectionCount">0 selected</span>
             <div style="flex:1"></div>
+            <button class="btn btn-secondary btn-sm" onclick="srToggleAddTags()">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M7 7h10M7 12h10M7 17h6"/><circle cx="19" cy="17" r="3"/><path d="M19 15v4M17 17h4"/></svg>
+              Add tags
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="srStartGenDesc()">
+              <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+              Generate descriptions
+            </button>
             <button class="btn btn-secondary btn-sm" onclick="createDrafts()">
               <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
               Create products in Shopify
@@ -830,6 +844,16 @@ tr:hover td { background: var(--surface2); }
               <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
               Delete selected
             </button>
+          </div>
+
+          <!-- Inline add-tags panel — shown when "Add tags" is clicked -->
+          <div id="srAddTagsPanel" style="display:none;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:10px">Add tags to <span id="srAddTagsCount">0</span> selected products</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+              <input id="srTagInput" type="text" class="input" placeholder="e.g. Sale, Featured, New Arrival" style="flex:1;min-width:200px" onkeydown="if(event.key==='Enter')srApplyTags()">
+              <button class="btn btn-primary btn-sm" onclick="srApplyTags()">Apply to selected</button>
+              <button class="btn btn-ghost btn-sm" onclick="srCloseAddTags()">Cancel</button>
+            </div>
           </div>
 
           <div id="createDraftsProgress" class="alert alert-info" style="display:none">
@@ -863,6 +887,10 @@ tr:hover td { background: var(--surface2); }
           <button class="btn btn-secondary btn-sm" onclick="watchlistSelectAll()">Select all</button>
           <button class="btn btn-ghost btn-sm" onclick="watchlistSelectNone()">Deselect all</button>
           <span class="text-sm text-muted" id="watchlistMeta" style="flex:1"></span>
+          <button class="btn btn-secondary btn-sm" id="recheckAllBtn" onclick="recheckAllWatchlist()" title="Recheck all watchlist items for newly available variants">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+            Recheck all
+          </button>
           <button class="btn btn-secondary btn-sm" onclick="downloadWatchlist()" title="Download watchlist as JSON">
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M12 3v13M5 14l7 7 7-7"/><path d="M5 21h14"/></svg>
             Download
@@ -889,6 +917,12 @@ tr:hover td { background: var(--surface2); }
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M18 6L6 18M6 6l12 12"/></svg>
             Remove selected
           </button>
+        </div>
+
+        <!-- Background auto-recheck status -->
+        <div id="watchlistAutoRecheckStatus" style="display:none;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius);padding:10px 14px;margin-bottom:12px;display:none;align-items:center;gap:10px;font-size:13px;color:var(--text2)">
+          <svg class="spin" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;flex-shrink:0"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg>
+          <span id="watchlistAutoRecheckMsg">Auto-rechecking watchlist for restocked items…</span>
         </div>
 
         <!-- Rescrape progress (shown while rescraping) -->
@@ -944,6 +978,16 @@ tr:hover td { background: var(--surface2); }
             <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M12 5v14M5 12h14"/></svg>
             Add tags to selected
           </button>
+          <span style="color:var(--border);align-self:center">|</span>
+          <input type="text" id="tmRemoveInput" placeholder="Tags to remove, comma-separated" style="min-width:240px;flex:1.5">
+          <button class="btn btn-sm" onclick="tmRemoveTags()" id="tmRemoveBtn" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-b)">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            Remove from selected
+          </button>
+          <button class="btn btn-sm" onclick="tmRemoveAllTags()" id="tmRemoveAllBtn" style="background:var(--red-bg);color:var(--red);border:1px solid var(--red-b);font-weight:600">
+            <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            Remove ALL tags from selected
+          </button>
         </div>
 
         <!-- Suggested tags chips -->
@@ -965,6 +1009,7 @@ tr:hover td { background: var(--surface2); }
         <div id="tmControls" style="display:none;gap:10px;margin-bottom:12px;align-items:center">
           <button class="btn btn-secondary btn-sm" onclick="tmSelectAll()">Select all</button>
           <button class="btn btn-ghost btn-sm" onclick="tmSelectNone()">Deselect all</button>
+          <button class="btn btn-ghost btn-sm" onclick="tmSelectUntagged()">Select untagged</button>
           <span class="text-sm text-muted" id="tmMeta"></span>
         </div>
 
@@ -1004,6 +1049,88 @@ tr:hover td { background: var(--surface2); }
     </div>
     <div class="modal-body" id="modal-body"></div>
     <div class="modal-footer" id="modal-footer"></div>
+  </div>
+</div>
+
+<!-- ── Reload vendors confirmation ── -->
+<div id="reloadVendorsOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);z-index:9999;align-items:center;justify-content:center" onclick="if(event.target===this)document.getElementById('reloadVendorsOverlay').style.display='none'">
+  <div style="background:var(--surface);border-radius:var(--radius-lg);padding:28px 32px;max-width:440px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:16px">
+      <div style="width:44px;height:44px;background:var(--amber-bg);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:22px;height:22px;color:var(--amber)"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+      </div>
+      <div>
+        <div style="font-size:15px;font-weight:700;color:var(--text)">Reload all vendors?</div>
+        <div style="font-size:12px;color:var(--text2);margin-top:2px">This cannot be undone while it's running</div>
+      </div>
+    </div>
+    <p style="font-size:14px;color:var(--text2);line-height:1.6;margin:0 0 22px">
+      This will fetch a fresh brand list directly from the competitor's website.
+      It will take <strong id="reloadVendorsEta" style="color:var(--text)">around 30 seconds</strong> to complete.
+      Your current brand and subcategory selections will be cleared.
+    </p>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="document.getElementById('reloadVendorsOverlay').style.display='none'">Cancel</button>
+      <button class="btn btn-primary" onclick="reloadVendorsConfirmed()">Continue</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Generate SEO descriptions modal ── -->
+<div id="srGenDescOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);backdrop-filter:blur(4px);z-index:9999;align-items:center;justify-content:center;padding:20px" onclick="if(event.target===this)srCloseGenDesc()">
+  <div style="background:var(--surface);border-radius:var(--radius-lg);width:100%;max-width:700px;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+    <!-- Header -->
+    <div style="padding:20px 24px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:12px;flex-shrink:0">
+      <div style="width:40px;height:40px;background:var(--blue-bg);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" style="width:20px;height:20px;color:var(--blue)"><path stroke-linecap="round" stroke-linejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/><path stroke-linecap="round" stroke-linejoin="round" d="M18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456z"/></svg>
+      </div>
+      <div>
+        <div style="font-size:15px;font-weight:700;color:var(--text)">Generate SEO Descriptions</div>
+        <div id="srGenDescSubtitle" style="font-size:12px;color:var(--text2);margin-top:1px">AI-powered, SEO-optimised product descriptions</div>
+      </div>
+      <div style="flex:1"></div>
+      <button onclick="srCloseGenDesc()" style="background:none;border:none;cursor:pointer;padding:6px;color:var(--text2);border-radius:6px" title="Close">
+        <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:18px;height:18px"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <!-- Body -->
+    <div id="srGenDescBody" style="flex:1;overflow-y:auto;padding:20px 24px;min-height:120px">
+      <!-- Loading (kept for structure, hidden immediately) -->
+      <div id="srGenDescLoading" style="display:none"></div>
+      <!-- Error -->
+      <div id="srGenDescError" style="display:none;background:var(--red-bg);border:1px solid var(--red-b);border-radius:var(--radius);padding:14px 16px;color:var(--red);font-size:13.5px"></div>
+      <!-- Results -->
+      <div id="srGenDescResultsList" style="display:none"></div>
+    </div>
+
+    <!-- Footer -->
+    <div id="srGenDescFooter" style="display:none;padding:16px 24px;border-top:1px solid var(--border);display:none;gap:10px;justify-content:space-between;align-items:center;flex-shrink:0">
+      <div style="font-size:12.5px;color:var(--text2)">Uncheck any descriptions you don't want to apply.</div>
+      <div style="display:flex;gap:10px">
+        <button class="btn btn-ghost" onclick="srCloseGenDesc()">Cancel</button>
+        <button class="btn btn-primary" onclick="srApplyDescriptions()" id="srApplyDescBtn">Apply all</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── What's New popup ── -->
+<div id="whatsNewOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);z-index:9999;align-items:center;justify-content:center" onclick="if(event.target===this)dismissWhatsNew()">
+  <div style="background:var(--surface);border-radius:var(--radius-lg);padding:28px;max-width:480px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.25);max-height:90vh;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px">
+      <div style="width:44px;height:44px;background:var(--accent-lt);border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0">
+        <svg width="22" height="22" fill="none" viewBox="0 0 24 24" stroke="var(--accent)" stroke-width="2"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+      </div>
+      <div>
+        <div id="whatsNewTitle" style="font-size:17px;font-weight:700"></div>
+        <div id="whatsNewSub" style="font-size:12px;color:var(--text3);margin-top:2px"></div>
+      </div>
+    </div>
+    <div id="whatsNewBody" style="overflow-y:auto;flex:1"></div>
+    <div style="margin-top:20px;display:flex;justify-content:flex-end">
+      <button class="btn btn-primary" onclick="dismissWhatsNew()">Got it</button>
+    </div>
   </div>
 </div>
 
@@ -1110,9 +1237,15 @@ async function init() {
   // It updates after each scan based on the vendor-targeted fetch.
   refreshDashboard();
   loadStats();
+  loadChangelog();
   setupTagInputs();
   loadAndRenderHistory();
-  getWatchlist().then(updateWatchlistBadge); // load and show badge
+  // Load watchlist, update badge, then kick off a silent background recheck
+  // after 3s so the UI finishes rendering before network calls start
+  getWatchlist().then(items => {
+    updateWatchlistBadge();
+    if (items.length) setTimeout(watchlistAutoRecheck, 3000);
+  });
 }
 
 async function loadStats() {
@@ -1269,6 +1402,19 @@ function refreshScanCompetitorPreview() {
   onCompetitorChange();
 }
 
+function confirmReloadVendors() {
+  // Estimate time based on how many brands are currently loaded
+  const vendorCount = document.getElementById('scanVendorSelect')?.options.length - 1 || 0;
+  const eta = vendorCount > 100 ? '30–45 minutes' : 'around 30 seconds';
+  document.getElementById('reloadVendorsEta').textContent = eta;
+  document.getElementById('reloadVendorsOverlay').style.display = 'flex';
+}
+
+function reloadVendorsConfirmed() {
+  document.getElementById('reloadVendorsOverlay').style.display = 'none';
+  onCompetitorChange(true);
+}
+
 async function onCompetitorChange(forceRefresh = false) {
   const id        = document.getElementById('scan-competitor').value;
   const vendorSel = document.getElementById('scanVendorSelect');
@@ -1302,10 +1448,7 @@ async function onCompetitorChange(forceRefresh = false) {
       opt.textContent  = b.name;
       vendorSel.appendChild(opt);
     });
-    if (hint) {
-      const dateStr = formatLastChecked(data.lastChecked);
-      hint.textContent = dateStr + (data.stale ? ' · Refreshing in background…' : '');
-    }
+    if (hint) hint.textContent = formatLastChecked(data.lastChecked);
     if (refreshBtn) refreshBtn.style.display = '';
     vendorSel.style.display = '';
   } catch(e) {
@@ -1391,9 +1534,10 @@ function updateScanUrlPreview() {
   const pathPrefix = c.url.includes('amxsuperstores.com.au') ? 'brands'
                    : c.url.includes('mcas.com.au')           ? 'brand'
                    : c.url.includes('roadstore.com.au')      ? 'brand'
+                   : c.url.includes('bikebiz.com.au')        ? 'brands'
                    : 'collections';
   let url = `${c.url.replace(/\/$/, '')}/${pathPrefix}/${v.handle}`;
-  if (subParam) url += subParam.startsWith('#') ? `/${subParam}` : `?${subParam}`;
+  if (subParam) url += subParam.includes('=') ? `?${subParam}` : `/${subParam}`;
   if (txt) txt.textContent = `Will scrape: ${url}`;
   if (box) box.style.display = '';
 }
@@ -1966,20 +2110,25 @@ async function rescrapeSelected() {
 }
 
 // ── Core rescrape logic ───────────────────────────────────────────────────────
-async function rescrapeItems(itemsToRescrape) {
+async function rescrapeItems(itemsToRescrape, { background = false } = {}) {
   const prog = document.getElementById('watchlistRescrapeProgress');
   const msg  = document.getElementById('watchlistRescrapeMsg');
-  if (prog) prog.style.display = '';
+
+  if (!background && prog) prog.style.display = '';
 
   let updated = 0;
-  const watchlist = getWatchlist();
+  let fullyRestocked = 0;
+  let newVariantsFound = 0;
 
   for (let i = 0; i < itemsToRescrape.length; i++) {
     const w = itemsToRescrape[i];
-    if (msg) msg.textContent = `Rescraping ${i + 1}/${itemsToRescrape.length}: ${w.title}…`;
+    if (!background && msg) msg.textContent = `Rechecking ${i + 1}/${itemsToRescrape.length}: ${w.title}…`;
+    if (background) {
+      const statusMsg = document.getElementById('watchlistAutoRecheckMsg');
+      if (statusMsg) statusMsg.textContent = `Auto-rechecking ${i + 1} of ${itemsToRescrape.length}: ${w.title}…`;
+    }
 
     try {
-      // Call backend to scrape just this one product URL
       const result = await api('POST', '/api/rescrape-product', { url: w.sourceUrl, sourceId: w.sourceId });
 
       if (result?.product) {
@@ -1988,14 +2137,42 @@ async function rescrapeItems(itemsToRescrape) {
         const newAvail   = variants.filter(v => v.available !== false && v.available !== 0);
         const newUnavail = variants.filter(v => v.available === false || v.available === 0);
 
-        // Update the watchlist entry
         if (newUnavail.length === 0) {
-          // ALL sizes now available — auto-remove from watchlist
+          // ALL variants now available — remove from watchlist
           await api('DELETE', `/api/watchlist/${encodeURIComponent(w.sourceId)}`);
           S_watchlistCache = (S_watchlistCache || []).filter(x => x.sourceId !== w.sourceId);
-          showToast(`✅ "${w.title}" — all sizes now available! Added to Gap Results.`, 'success');
+
+          // Promote to Gap Results — build a clean product from watchlist data + fresh variants
+          const gapProduct = {
+            sourceId:       w.sourceId,
+            handle:         w.handle,
+            title:          w.title,
+            vendor:         w.vendor,
+            productType:    w.productType || p.productType || '',
+            description:    w.description || p.description || '',
+            images:         w.images || p.images || [],
+            tags:           w.tags || p.tags || '',
+            priceMin:       p.priceMin ?? w.priceMin,
+            priceMax:       p.priceMax ?? w.priceMax,
+            sourceUrl:      w.sourceUrl,
+            sourcePlatform: w.sourcePlatform || p.sourcePlatform,
+            variants:       variants.map(v => ({ ...v, available: true })),
+          };
+
+          if (!S.lastResult) {
+            S.lastResult = { missing: [], matched: [], competitorName: w.competitorName || '', scrapedAt: new Date().toISOString() };
+          }
+          // Avoid duplicates if already in gap results
+          if (!S.lastResult.missing.some(x => (x.sourceId || x.handle) === gapProduct.sourceId)) {
+            S.lastResult.missing.push(gapProduct);
+          }
+
+          // Re-render results page if the user is currently on it
+          if (document.getElementById('page-results')?.style?.display !== 'none') renderResults();
+
+          showToast(`✅ "${w.title}" — all sizes back in stock! Added to Gap Results.`, 'success');
+          fullyRestocked++;
         } else {
-          // Update available/unavailable split via API
           const updates = {
             availableVariants:   newAvail.map(v => ({ size: v.size, sku: v.sku, price: v.price })),
             unavailableVariants: newUnavail.map(v => ({ size: v.size })),
@@ -2006,20 +2183,59 @@ async function rescrapeItems(itemsToRescrape) {
           const wIdx = (S_watchlistCache || []).findIndex(x => x.sourceId === w.sourceId);
           if (wIdx !== -1) S_watchlistCache[wIdx] = { ...S_watchlistCache[wIdx], ...updates };
           const newlyAvail = newAvail.length - (w.availableVariants?.length || 0);
-          if (newlyAvail > 0) showToast(`${newlyAvail} new size${newlyAvail !== 1 ? 's' : ''} now available for "${w.title}"`);
+          if (newlyAvail > 0) {
+            showToast(`${newlyAvail} new size${newlyAvail !== 1 ? 's' : ''} now available for "${w.title}"`);
+            newVariantsFound += newlyAvail;
+          }
         }
         updated++;
       }
     } catch(e) {
-      showToast(`Error rescraping "${w.title}": ${e.message}`, 'error');
+      if (!background) showToast(`Error rechecking "${w.title}": ${e.message}`, 'error');
     }
   }
 
-  saveWatchlist(watchlist);
   S_watchlistSel.clear();
-  if (prog) prog.style.display = 'none';
+  if (!background && prog) prog.style.display = 'none';
   renderWatchlist();
-  if (updated > 0) showToast(`Rescrape complete — ${updated} product${updated !== 1 ? 's' : ''} updated`);
+  updateWatchlistBadge();
+
+  if (background) {
+    const changes = fullyRestocked + newVariantsFound;
+    if (changes > 0) showToast(`Watchlist recheck: ${fullyRestocked > 0 ? `${fullyRestocked} fully restocked` : ''}${fullyRestocked > 0 && newVariantsFound > 0 ? ', ' : ''}${newVariantsFound > 0 ? `${newVariantsFound} new size${newVariantsFound !== 1 ? 's' : ''} found` : ''}`, 'success');
+  } else if (updated > 0) {
+    showToast(`Recheck complete — ${updated} product${updated !== 1 ? 's' : ''} checked`);
+  }
+}
+
+// ── Auto-recheck all watchlist items on app launch ────────────────────────────
+async function watchlistAutoRecheck() {
+  const items = await getWatchlist();
+  if (!items.length) return;
+
+  const statusEl = document.getElementById('watchlistAutoRecheckStatus');
+  const btnEl    = document.getElementById('recheckAllBtn');
+
+  if (statusEl) statusEl.style.display = 'flex';
+  if (btnEl)    btnEl.disabled = true;
+
+  await rescrapeItems(items, { background: true });
+
+  if (statusEl) statusEl.style.display = 'none';
+  if (btnEl)    btnEl.disabled = false;
+}
+
+// ── Manual recheck all ────────────────────────────────────────────────────────
+async function recheckAllWatchlist() {
+  const items = await getWatchlist();
+  if (!items.length) return showToast('Watchlist is empty', 'error');
+
+  const btnEl = document.getElementById('recheckAllBtn');
+  if (btnEl) btnEl.disabled = true;
+
+  await rescrapeItems(items);
+
+  if (btnEl) btnEl.disabled = false;
 }
 
 // ── Upload selected items' available sizes ────────────────────────────────────
@@ -2373,7 +2589,177 @@ function updateSelectionBar() {
     document.getElementById('selectionCount').textContent = `${cnt} product${cnt !== 1 ? 's' : ''} selected`;
   } else {
     bar.style.display = 'none';
+    srCloseAddTags();
   }
+}
+
+function srToggleAddTags() {
+  const panel = document.getElementById('srAddTagsPanel');
+  if (panel.style.display !== 'none') { srCloseAddTags(); return; }
+  document.getElementById('srAddTagsCount').textContent = S.selectedProducts.size;
+  panel.style.display = '';
+  document.getElementById('srTagInput').focus();
+}
+
+function srCloseAddTags() {
+  const panel = document.getElementById('srAddTagsPanel');
+  if (panel) panel.style.display = 'none';
+  const input = document.getElementById('srTagInput');
+  if (input) input.value = '';
+}
+
+function srApplyTags() {
+  const raw     = (document.getElementById('srTagInput').value || '').trim();
+  const newTags = raw.split(',').map(t => t.trim()).filter(Boolean);
+  if (!newTags.length) { showToast('Enter at least one tag', 'error'); return; }
+
+  const allProducts = [...(S.lastResult?.missing || []), ...(S.lastResult?.matched || [])];
+  let count = 0;
+  for (const p of allProducts) {
+    if (!S.selectedProducts.has(p.sourceId || p.handle)) continue;
+    const existing = new Set((p.tags || '').split(',').map(t => t.trim()).filter(Boolean));
+    newTags.forEach(t => existing.add(t));
+    p.tags = [...existing].join(', ');
+    count++;
+  }
+
+  srCloseAddTags();
+  applyFilters();
+  showToast(`Added ${newTags.length} tag${newTags.length !== 1 ? 's' : ''} to ${count} product${count !== 1 ? 's' : ''}`, 'success');
+}
+
+// ── Generate SEO descriptions (template-based, no API key required) ───────────
+let srGenDescResults = [];
+
+function srBuildDescription(p) {
+  const tagList = (p.tags || '').split(',').map(t => t.trim());
+
+  // Extract structured data from taxonomy tags
+  const makeTag  = tagList.find(t => t.startsWith('MAKE_'));
+  const make     = makeTag ? makeTag.replace('MAKE_', '') : '';
+
+  const modelTags = tagList.filter(t => t.startsWith('MODEL_')).map(t => t.replace('MODEL_', ''));
+  // Pick longest model string (most descriptive)
+  const model = modelTags.sort((a, b) => b.length - a.length)[0] || '';
+
+  const years = tagList
+    .filter(t => t.startsWith('YEAR_'))
+    .map(t => parseInt(t.replace('YEAR_', '')))
+    .filter(n => !isNaN(n))
+    .sort((a, b) => a - b);
+  const yearStr = years.length > 1 ? `${years[0]}–${years[years.length - 1]}` : years.length === 1 ? String(years[0]) : '';
+
+  const colours = tagList.filter(t => t.startsWith('Colour_')).map(t => t.replace('Colour_', ''));
+
+  // Detect product type from title
+  const titleLc = (p.title || '').toLowerCase();
+  let pType = 'Exhaust System';
+  if (/\bslip[\s-]on\b/.test(titleLc))        pType = 'Slip-On Exhaust';
+  else if (/\bheader\b/.test(titleLc))         pType = 'Header';
+  else if (/\bbaffle\b/.test(titleLc))         pType = 'Baffle';
+  else if (/\bservo eliminator\b/.test(titleLc)) pType = 'Exhaust Servo Eliminator';
+
+  // Detect material from title
+  let material = 'premium';
+  if (/\btitanium\b/.test(titleLc))            material = 'titanium';
+  else if (/\bstainless\b/.test(titleLc))      material = 'stainless steel';
+  else if (/\bcarbon\b/.test(titleLc))         material = 'carbon fibre';
+
+  const vendor   = p.vendor || 'Vandemon';
+  const fitment  = [make, model, yearStr].filter(Boolean).join(' ');
+  const pShort   = pType.replace(' System', '').replace(' Exhaust', '');
+
+  const opening = `Upgrade your ${make || 'motorcycle'} with the ${vendor} ${model ? model + ' ' : ''}${pType}${yearStr ? ` (${yearStr})` : ''}. `
+    + `Crafted from ${material}, this ${pType.toLowerCase()} is engineered for improved exhaust flow, a deep aggressive note, and a notable weight saving over the factory unit.`;
+
+  const bullets = [
+    `Precision engineered for the ${fitment || (make || 'motorcycle')} — direct bolt-on fitment, no modifications required`,
+    `${material.charAt(0).toUpperCase() + material.slice(1)} construction for superior heat resistance, longevity, and weight reduction`,
+    `Enhanced exhaust scavenging delivers measurable gains in horsepower and torque`,
+    `Deep, aggressive exhaust note throughout the entire RPM range`,
+    colours.length
+      ? `Available in ${colours.join(', ')} — choose the finish that suits your build`
+      : `High-quality finish that complements your motorcycle's aesthetics`,
+    `Backed by ${vendor}'s reputation as specialists in performance motorcycle exhausts`,
+  ];
+
+  const closing = `Genuine ${vendor} ${pShort} — built specifically for the ${fitment || make}. `
+    + `Shop the full ${vendor} exhaust range at Highside.`;
+
+  return `<p>${opening}</p>\n<ul>\n${bullets.map(b => `<li>${b}</li>`).join('\n')}\n</ul>\n<p>${closing}</p>`;
+}
+
+function srStartGenDesc() {
+  const sel = [...S.selectedProducts];
+  if (!sel.length) return showToast('Select products first', 'error');
+
+  const allProds = [...(S.lastResult?.missing || []), ...(S.lastResult?.matched || [])];
+  const toGen    = allProds.filter(p => sel.includes(p.sourceId || p.handle));
+  if (!toGen.length) return showToast('No selected products found', 'error');
+
+  // Generate all descriptions synchronously — no API call needed
+  const results = toGen.map(p => ({
+    sourceId:    p.sourceId || p.handle,
+    description: srBuildDescription(p),
+  }));
+
+  srGenDescResults = [];
+  document.getElementById('srGenDescOverlay').style.display = 'flex';
+  document.getElementById('srGenDescLoading').style.display = 'none';
+  document.getElementById('srGenDescError').style.display   = 'none';
+  document.getElementById('srGenDescSubtitle').textContent  = `${results.length} description${results.length !== 1 ? 's' : ''} ready — review before applying`;
+
+  srRenderGenDescResults(toGen, results, []);
+}
+
+function srRenderGenDescResults(products, results, failed) {
+  document.getElementById('srGenDescLoading').style.display = 'none';
+
+  if (!results.length && failed.length) {
+    const errEl = document.getElementById('srGenDescError');
+    errEl.style.display = 'block';
+    errEl.textContent   = `All ${failed.length} product${failed.length !== 1 ? 's' : ''} failed: ${failed[0]?.error || 'Unknown error'}`;
+    return;
+  }
+
+  srGenDescResults = results;
+
+  const list = document.getElementById('srGenDescResultsList');
+  list.style.display = 'block';
+  list.innerHTML = results.map((r, i) => {
+    const p     = products.find(x => (x.sourceId || x.handle) === r.sourceId);
+    const title = p?.title || r.sourceId;
+    return `<div style="border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px">
+      <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;margin-bottom:10px">
+        <input type="checkbox" id="srDescChk-${i}" checked style="margin-top:2px;width:15px;height:15px;flex-shrink:0;cursor:pointer">
+        <span style="font-size:13px;font-weight:600;color:var(--text)">${esc(title)}</span>
+      </label>
+      <div style="font-size:13px;color:var(--text2);line-height:1.7;border-left:3px solid var(--blue-b);padding-left:12px;margin-left:4px">${r.description}</div>
+    </div>`;
+  }).join('') + (failed.length ? `<div style="font-size:12.5px;color:var(--red);padding:8px 0">${failed.length} product${failed.length !== 1 ? 's' : ''} could not be generated.</div>` : '');
+
+  const footer = document.getElementById('srGenDescFooter');
+  footer.style.display = 'flex';
+  document.getElementById('srApplyDescBtn').textContent = `Apply ${results.length}`;
+  document.getElementById('srGenDescSubtitle').textContent = `${results.length} description${results.length !== 1 ? 's' : ''} ready — review before applying`;
+}
+
+function srApplyDescriptions() {
+  const allProds = [...(S.lastResult?.missing || []), ...(S.lastResult?.matched || [])];
+  let applied = 0;
+  srGenDescResults.forEach((r, i) => {
+    if (!document.getElementById(`srDescChk-${i}`)?.checked) return;
+    const p = allProds.find(x => (x.sourceId || x.handle) === r.sourceId);
+    if (p) { p.description = r.description; applied++; }
+  });
+  srCloseGenDesc();
+  applyFilters();
+  showToast(`Applied descriptions to ${applied} product${applied !== 1 ? 's' : ''}`, 'success');
+}
+
+function srCloseGenDesc() {
+  document.getElementById('srGenDescOverlay').style.display = 'none';
+  srGenDescResults = [];
 }
 
 function deleteSingleProduct(id) {
@@ -2872,6 +3258,7 @@ function removeTag(wrapId, inputId, idx) {
 // ═══════════════════════════════════════════════════════════════════
 let tmProducts = [];
 let tmSelected = new Set();
+let tmTagsToRemove = new Map(); // Map<productId, Set<tag>>
 let tmFiltersLoaded = false;
 let tmAllTypes = [];
 
@@ -2951,6 +3338,7 @@ async function tmLoadProducts() {
     const data = await api('GET', `/api/store-products?${params}`);
     tmProducts = data.products || [];
     tmSelected.clear();
+    tmTagsToRemove.clear();
     tmSuggestionsCache = [];
     document.getElementById('tmSuggestions').style.display = 'none';
     tmRender();
@@ -2970,7 +3358,7 @@ function tmRender() {
   empty.style.display = tmProducts.length ? 'none' : '';
 
   list.innerHTML = tmProducts.map(p => `
-    <div class="card" style="padding:12px 16px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start;cursor:pointer" onclick="tmToggle('${p.id}')">
+    <div class="card${tmSelected.has(p.id) ? ' tm-card-selected' : ''}" style="padding:12px 16px;margin-bottom:8px;display:flex;gap:12px;align-items:flex-start;cursor:pointer" onclick="if(!event.target.closest('.tm-tag-chip'))tmToggle('${p.id}')">
       <input type="checkbox" id="tmChk-${p.id}" ${tmSelected.has(p.id) ? 'checked' : ''}
              onclick="event.stopPropagation();tmToggle('${p.id}')" style="margin-top:3px">
       <div style="flex:1;min-width:0">
@@ -2978,7 +3366,10 @@ function tmRender() {
         <div class="text-sm text-muted" style="margin:2px 0 6px">${esc(p.vendor)}${p.productType ? ' · ' + esc(p.productType) : ''}</div>
         <div style="display:flex;gap:4px;flex-wrap:wrap">
           ${p.tags.length
-            ? p.tags.map(t => `<span class="badge badge-neutral">${esc(t)}</span>`).join('')
+            ? p.tags.map(t => {
+                const q = tmTagsToRemove.get(p.id)?.has(t);
+                return `<span class="badge badge-neutral tm-tag-chip${q ? ' tm-tag-remove-queued' : ''}" data-tag="${esc(t)}" data-pid="${p.id}" onclick="tmToggleTagForRemoval(this.dataset.pid,this.dataset.tag)" title="Click to queue for removal">${esc(t)}</span>`;
+              }).join('')
             : '<span class="text-sm text-muted">No tags yet</span>'}
         </div>
       </div>
@@ -2988,19 +3379,55 @@ function tmRender() {
 }
 
 function tmToggle(id) {
-  if (tmSelected.has(id)) tmSelected.delete(id); else tmSelected.add(id);
+  if (tmSelected.has(id)) {
+    tmSelected.delete(id);
+    if (tmTagsToRemove.has(id)) {
+      tmTagsToRemove.delete(id);
+      tmRender(); // re-render to clear strikethroughs on this product's tags
+      return;
+    }
+  } else {
+    tmSelected.add(id);
+  }
   const chk = document.getElementById(`tmChk-${id}`);
-  if (chk) chk.checked = tmSelected.has(id);
+  if (chk) {
+    const selected = tmSelected.has(id);
+    chk.checked = selected;
+    chk.closest('.card')?.classList.toggle('tm-card-selected', selected);
+  }
   tmUpdateSelBar();
 }
 
-function tmSelectAll()  { tmProducts.forEach(p => tmSelected.add(p.id)); tmRender(); }
-function tmSelectNone() { tmSelected.clear(); tmRender(); }
+function tmSelectAll()      { tmProducts.forEach(p => tmSelected.add(p.id)); tmRender(); }
+function tmSelectNone()     { tmSelected.clear(); tmTagsToRemove.clear(); tmRender(); }
+function tmSelectUntagged() { tmProducts.filter(p => p.tags.length === 0).forEach(p => tmSelected.add(p.id)); tmRender(); }
+
+function tmToggleTagForRemoval(productId, tag) {
+  if (!tmTagsToRemove.has(productId)) tmTagsToRemove.set(productId, new Set());
+  const set = tmTagsToRemove.get(productId);
+  if (set.has(tag)) {
+    set.delete(tag);
+    if (set.size === 0) tmTagsToRemove.delete(productId);
+  } else {
+    set.add(tag);
+    tmSelected.add(productId); // auto-select this product so the remove button acts on it
+  }
+  tmRender();
+}
 
 function tmUpdateSelBar() {
   const bar = document.getElementById('tmSelBar');
   bar.style.display = tmSelected.size ? 'flex' : 'none';
   document.getElementById('tmSelCount').textContent = `${tmSelected.size} selected`;
+  const removeBtn = document.getElementById('tmRemoveBtn');
+  if (removeBtn) {
+    const trashSvg = '<svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path stroke-linecap="round" stroke-linejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>';
+    let queuedCount = 0;
+    for (const s of tmTagsToRemove.values()) queuedCount += s.size;
+    removeBtn.innerHTML = queuedCount
+      ? `${trashSvg} Remove ${queuedCount} queued tag${queuedCount === 1 ? '' : 's'}`
+      : `${trashSvg} Remove from selected`;
+  }
 }
 
 async function tmApplyTags() {
@@ -3027,6 +3454,94 @@ async function tmApplyTags() {
   } finally {
     btn.disabled = false;
     btn.innerHTML = '<svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:13px;height:13px"><path d="M12 5v14M5 12h14"/></svg> Add tags to selected';
+  }
+}
+
+async function tmRemoveTags() {
+  const inputTags = document.getElementById('tmRemoveInput').value.split(',').map(s => s.trim()).filter(Boolean);
+  let totalQueued = 0;
+  for (const s of tmTagsToRemove.values()) totalQueued += s.size;
+
+  if (!inputTags.length && totalQueued === 0) return showToast('Enter tags to remove or click tags on the product cards', 'error');
+  if (!tmSelected.size) return showToast('Select at least one product', 'error');
+
+  const btn = document.getElementById('tmRemoveBtn');
+  btn.disabled = true; btn.textContent = 'Removing…';
+
+  let totalUpdated = 0, totalFailed = 0;
+  try {
+    // Typed input tags: remove from every selected product in one call
+    if (inputTags.length) {
+      const r = await api('POST', '/api/store-products/remove-tags', { productIds: [...tmSelected], tags: inputTags });
+      totalUpdated += r.updated; totalFailed += r.failed;
+    }
+
+    // Per-product clicked tags: one call per product, only the tags clicked on that specific product
+    const inputLc = inputTags.map(t => t.toLowerCase());
+    for (const [productId, tags] of tmTagsToRemove) {
+      if (!tmSelected.has(productId)) continue;
+      const toRemove = [...tags].filter(t => !inputLc.includes(t.toLowerCase()));
+      if (!toRemove.length) continue;
+      const r = await api('POST', '/api/store-products/remove-tags', { productIds: [productId], tags: toRemove });
+      totalUpdated += r.updated; totalFailed += r.failed;
+    }
+
+    showToast(
+      `Tags removed from ${totalUpdated} product${totalUpdated === 1 ? '' : 's'}` + (totalFailed ? `, ${totalFailed} failed` : ''),
+      totalFailed ? 'warning' : 'success'
+    );
+
+    // Update local state
+    const inputLc2 = inputTags.map(t => t.toLowerCase());
+    for (const p of tmProducts) {
+      if (tmSelected.has(p.id) && inputLc2.length) {
+        p.tags = p.tags.filter(t => !inputLc2.includes(t.toLowerCase()));
+      }
+      const queued = tmTagsToRemove.get(p.id);
+      if (queued?.size) {
+        const queuedLc = [...queued].map(t => t.toLowerCase());
+        p.tags = p.tags.filter(t => !queuedLc.includes(t.toLowerCase()));
+      }
+    }
+
+    document.getElementById('tmRemoveInput').value = '';
+    tmTagsToRemove.clear();
+    tmRender();
+  } catch (e) {
+    showToast('Tag removal failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    tmUpdateSelBar();
+  }
+}
+
+async function tmRemoveAllTags() {
+  if (!tmSelected.size) return showToast('Select at least one product', 'error');
+  const allTags = new Set();
+  for (const p of tmProducts) {
+    if (tmSelected.has(p.id)) p.tags.forEach(t => allTags.add(t));
+  }
+  if (!allTags.size) return showToast('Selected products have no tags to remove', 'warning');
+
+  const btn = document.getElementById('tmRemoveAllBtn');
+  btn.disabled = true; btn.textContent = `Clearing tags from ${tmSelected.size} products…`;
+  try {
+    const tags = [...allTags];
+    const r = await api('POST', '/api/store-products/remove-tags', { productIds: [...tmSelected], tags });
+    showToast(
+      `All tags cleared from ${r.updated} product${r.updated === 1 ? '' : 's'}` + (r.failed ? `, ${r.failed} failed` : ''),
+      r.failed ? 'warning' : 'success'
+    );
+    for (const p of tmProducts) {
+      if (tmSelected.has(p.id)) p.tags = [];
+    }
+    tmTagsToRemove.clear();
+    tmRender();
+  } catch (e) {
+    showToast('Tag removal failed: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Remove ALL tags from selected';
   }
 }
 
@@ -3254,6 +3769,85 @@ async function shutdownApp() {
       <h2>Server stopped</h2><p>Close this tab.</p>
     </div>`;
   }
+}
+
+// ── Changelog & What's New ────────────────────────────────────────
+let _changelog = [];
+
+async function loadChangelog() {
+  try {
+    const res = await fetch('/changelog.json');
+    if (!res.ok) return;
+    _changelog = await res.json();
+    renderChangelogDashboard();
+    checkWhatsNew();
+  } catch(_) {}
+}
+
+function renderChangelogDashboard() {
+  if (!_changelog.length) return;
+  const sv = document.getElementById('sidebarVersion');
+  if (sv) sv.textContent = `Competitor Scout v${_changelog[0].version}`;
+}
+
+function openUpdateList() {
+  if (!_changelog.length) return;
+  document.getElementById('whatsNewTitle').textContent = 'UPDATE LIST';
+  document.getElementById('whatsNewSub').textContent   = `Current version: v${_changelog[0].version}`;
+  document.getElementById('whatsNewBody').innerHTML    = _changelog.map((v, i) => `
+    <div style="padding:14px 0;${i < _changelog.length - 1 ? 'border-bottom:1px solid var(--border)' : ''}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="font-size:11px;font-weight:700;padding:3px 10px;border-radius:20px;background:${i===0?'var(--accent)':'var(--border)'};color:${i===0?'#fff':'var(--text2)'}">v${v.version}</span>
+        ${i === 0 ? '<span style="font-size:11px;font-weight:600;background:var(--green-bg);color:var(--green);padding:3px 10px;border-radius:20px">Latest</span>' : ''}
+        <span style="font-size:12px;color:var(--text3)">${v.date}</span>
+      </div>
+      <ul style="list-style:none;padding:0;display:flex;flex-direction:column;gap:6px">
+        ${v.changes.map(c => `<li style="font-size:13.5px;color:var(--text);line-height:1.5;display:flex;gap:8px"><span style="color:var(--accent);flex-shrink:0">•</span><span>${c}</span></li>`).join('')}
+      </ul>
+    </div>
+  `).join('');
+  document.getElementById('whatsNewOverlay').style.display = 'flex';
+}
+
+function _cmpVer(a, b) {
+  const pa = String(a).replace(/^v/,'').split('.').map(Number);
+  const pb = String(b).replace(/^v/,'').split('.').map(Number);
+  for (let i = 0; i < 3; i++) { const d = (pa[i]||0)-(pb[i]||0); if (d) return d; }
+  return 0;
+}
+
+function checkWhatsNew() {
+  if (!_changelog.length) return;
+  const latest   = _changelog[0].version;
+  const lastSeen = localStorage.getItem('lastSeenVersion');
+
+  // First-ever load — mark as seen silently so the popup only fires after a real update
+  if (!lastSeen) {
+    localStorage.setItem('lastSeenVersion', latest);
+    return;
+  }
+
+  if (_cmpVer(latest, lastSeen) > 0) showWhatsNew();
+}
+
+function showWhatsNew() {
+  if (!_changelog.length) return;
+  const v = _changelog[0]; // only the current release
+
+  document.getElementById('whatsNewTitle').textContent = `UPDATE LIST — v${v.version}`;
+  document.getElementById('whatsNewSub').textContent   = v.date;
+  document.getElementById('whatsNewBody').innerHTML    = `
+    <ul style="list-style:none;padding:0;display:flex;flex-direction:column;gap:10px">
+      ${v.changes.map(c => `<li style="font-size:14px;color:var(--text);line-height:1.55;display:flex;gap:10px"><span style="color:var(--accent);flex-shrink:0">•</span><span>${c}</span></li>`).join('')}
+    </ul>
+  `;
+
+  document.getElementById('whatsNewOverlay').style.display = 'flex';
+}
+
+function dismissWhatsNew() {
+  if (_changelog[0]) localStorage.setItem('lastSeenVersion', _changelog[0].version);
+  document.getElementById('whatsNewOverlay').style.display = 'none';
 }
 
 // ── Boot ──────────────────────────────────────────────────────────

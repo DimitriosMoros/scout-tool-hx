@@ -184,6 +184,16 @@ export function generateTags(product, brand) {
       .replace(/\s+/g, ' ')
       .trim();
     if (modelStr.length >= 2 && modelStr.length <= 40) tags.add(`MODEL_${modelStr}`);
+
+    // Vandemon combo tag: "Vandemon {Make} {ProductType}" e.g. "Vandemon Kawasaki Exhaust"
+    if (product.sourcePlatform === 'vandemon') {
+      let pType = 'Exhaust';
+      if (/\bslip[\s-]on\b/i.test(title))  pType = 'Slip-On';
+      else if (/\bheader\b/i.test(title))   pType = 'Header';
+      else if (/\bbaffle\b/i.test(title))   pType = 'Baffle';
+      else if (/\bservo\b/i.test(title))    pType = 'Servo Eliminator';
+      tags.add(`Vandemon ${make} ${pType}`);
+    }
   }
 
   // Alphanumeric model codes not already covered above (helmet models, accessory codes, etc.)
@@ -199,13 +209,14 @@ export function generateTags(product, brand) {
   // into individual YEAR_ tags. Ranges are checked across title + description;
   // single years in title only (to avoid false positives from generic text in
   // long descriptions).
-  const yearRangeRe = /(?:\b(20\d{2})|['’](\d{2}))\s*(?:[-–\/]|to)\s*(?:(20\d{2})|['’](\d{2}))\b/gi;
-  const singleYearRe = /(?:\b(20\d{2})|['’](\d{2}))\b/g;
+  // Group 5 handles bare 2-digit shorthand end year e.g. "2018-26" where "26" has no apostrophe
+  const yearRangeRe = /(?:\b(20\d{2})|[‘’](\d{2}))\s*(?:[-–\/]|to)\s*(?:(20\d{2})|[‘’](\d{2})|\b(\d{2})\b)/gi;
+  const singleYearRe = /(?:\b(20\d{2})|[‘’](\d{2}))\b/g;
   const yearSet = new Set();
   let ym;
   while ((ym = yearRangeRe.exec(combined)) !== null) {
     const start = ym[1] ? parseInt(ym[1]) : 2000 + parseInt(ym[2]);
-    const end   = ym[3] ? parseInt(ym[3]) : 2000 + parseInt(ym[4]);
+    const end   = ym[3] ? parseInt(ym[3]) : ym[4] ? 2000 + parseInt(ym[4]) : 2000 + parseInt(ym[5]);
     if (end > start && end - start <= 20) {
       for (let y = start; y <= end; y++) yearSet.add(y);
     }

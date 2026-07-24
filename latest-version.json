@@ -1,6 +1,6 @@
 {
-  "version": "1.4.0",
-  "url": "https://github.com/DimitriosMoros/scout-tool-hx/archive/refs/tags/v1.4.0.zip",
-  "notes": "Automatic vendors and subcategories discovery for AMX, MCAS, and Roadstore. Fixed subcategory discovery for Motoheaven.",
-  "date": "2026-07-23"
+  "version": "1.5.0",
+  "url": "https://github.com/DimitriosMoros/scout-tool-hx/archive/refs/tags/v1.5.0.zip",
+  "notes": "vandemon, bikebz, tagging features and auto generate seo descriptions",
+  "date": "2026-07-24"
 }

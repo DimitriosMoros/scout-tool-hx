@@ -1,0 +1,61 @@
+[
+  {
+    "version": "1.5.0",
+    "date": "24 Jul 2026",
+    "changes": [
+      "New competitor: Van Demon Performance (vandemonperformance.com.au) — Shopify API scraper, no browser needed",
+      "Vandemon products automatically get the correct vendor name, 'Vandemon - ' title prefix, and brand combo tags (e.g. Vandemon Kawasaki Exhaust)",
+      "Fixed year range tags for shorthand formats like '2018-26' — now correctly expands to all years in the range",
+      "Scrape report: select products and add custom tags before uploading to Shopify",
+      "Scrape report: generate SEO-optimised product descriptions for selected products instantly — no API key needed",
+      "Watchlist: new Recheck All button to manually check all items for restocked variants",
+      "Watchlist: app now automatically rechecks all watchlist items in the background every time it launches",
+      "Watchlist: when all variants of a product come back in stock it is automatically moved to Gap Results"
+    ]
+  },
+  {
+    "version": "1.4.0",
+    "date": "23 Jul 2026",
+    "changes": [
+      "You can now pick a brand for AMX, MCAS, and Road Store directly in the app — no manual typing needed",
+      "Subcategories (e.g. Helmets, Jackets) load automatically when you select a brand",
+      "Brand and subcategory lists come pre-loaded in every update — ready to use straight away",
+      "Fixed Motoheaven subcategories not showing the correct categories",
+      "Fixed AMX subcategories disappearing after selecting a brand"
+    ]
+  },
+  {
+    "version": "1.3.2",
+    "date": "1 Jul 2026",
+    "changes": [
+      "Fixed a bug that stopped tags from saving when uploading products to Shopify"
+    ]
+  },
+  {
+    "version": "1.3.0",
+    "date": "15 Jun 2026",
+    "changes": [
+      "New Tag Manager — add and manage product tags in your Shopify store straight from the app",
+      "Smart tag suggestions based on what competitors are selling",
+      "Scan History — go back and review or export any past scan"
+    ]
+  },
+  {
+    "version": "1.2.0",
+    "date": "10 May 2026",
+    "changes": [
+      "Road Store (roadstore.com.au) can now be scanned as a competitor",
+      "Watchlist — save specific products to track price and stock changes over time",
+      "Export your gap analysis results to Excel with one click"
+    ]
+  },
+  {
+    "version": "1.1.0",
+    "date": "20 Apr 2026",
+    "changes": [
+      "MCAS (mcas.com.au) can now be scanned as a competitor",
+      "Scan just one brand at a time instead of the whole site",
+      "More accurate size detection for products with multiple variants"
+    ]
+  }
+]

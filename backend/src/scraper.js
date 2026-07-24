@@ -15,6 +15,7 @@ import { scrapeMotoheaven }  from './motoheavenScraper.js';
 import { scrapeBikebiz }     from './bikebizScraper.js';
 import { scrapeHurtlegear }  from './hurtlegearScraper.js';
 import { scrapeRoadstore }   from './roadstoreScraper.js';
+import { scrapeVandemon }   from './vandemonScraper.js';
 import { scrapeGeneric }     from './genericScraper.js';
 
 const CONCURRENCY = 3;
@@ -160,6 +161,19 @@ export async function scrapeCompetitor(url, brands = [], onProgress = () => {}, 
     onProgress('Hurtle Gear detected - using dedicated scraper...', 8);
     const products = await scrapeHurtlegear(url, brands, onProgress, jobId, options);
     if (!products.length) throw new Error('No Hurtle Gear products found. Check URL and brand filters.');
+    return products.map(p => ({
+      ...p,
+      tags: generateTags(p, p.vendor || guessBrand(p.title, brands)),
+      productType: p.productType || inferProductType(p.title, p.description || ''),
+    }));
+  }
+
+  // Van Demon Performance (Shopify JSON API — no Puppeteer)
+  if (url.includes('vandemonperformance.com.au')) {
+    console.log('[scraper] Van Demon Performance detected — using dedicated scraper');
+    onProgress('Van Demon Performance detected - using Shopify API scraper...', 8);
+    const products = await scrapeVandemon(url, brands, onProgress, jobId, options);
+    if (!products.length) throw new Error('No Van Demon products found. Check URL and brand filters.');
     return products.map(p => ({
       ...p,
       tags: generateTags(p, p.vendor || guessBrand(p.title, brands)),

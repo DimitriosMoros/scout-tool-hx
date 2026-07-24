@@ -738,4 +738,93 @@ export async function scrapeBikebizProduct(url) {
   }
 }
 
+// ── Brand & subcategory discovery ─────────────────────────────────────────────
+
+export async function discoverCompetitorBrands(baseUrl) {
+  const browser = await openBrowser();
+  try {
+    const page = await newPage(browser);
+    await page.goto(`${BASE}/brands/`, { waitUntil: 'networkidle2', timeout: 60000 });
+    await sleep(2500);
+
+    const seen      = new Set();
+    const allBrands = [];
+
+    // The brands page shows one letter's brands at a time via JS-driven letter buttons.
+    // Click each letter A-Z and collect brands after each click.
+    for (const letter of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+      const clicked = await page.evaluate(ltr => {
+        const target = Array.from(document.querySelectorAll('p'))
+          .find(p => p.textContent.trim() === ltr && p.closest('[class*="cursor-pointer"]'));
+        if (!target) return false;
+        target.closest('[class*="cursor-pointer"]').click();
+        return true;
+      }, letter);
+
+      if (!clicked) continue;
+      await sleep(1200);
+
+      const letterBrands = await page.evaluate(() => {
+        return Array.from(document.querySelectorAll('a[href*="/brands/"]'))
+          .map(a => {
+            const path  = new URL(a.href).pathname.replace(/\/$/, '');
+            const parts = path.split('/').filter(Boolean);
+            // Only direct brand pages: /brands/{handle}
+            if (parts.length !== 2 || parts[0] !== 'brands') return null;
+            const handle = parts[1].toLowerCase();
+            // Skip single-letter nav links e.g. /brands/a
+            if (/^[a-z]$/.test(handle)) return null;
+            // Get visible text only — clone and strip images/SVGs first
+            const clone = a.cloneNode(true);
+            clone.querySelectorAll('img, svg').forEach(el => el.remove());
+            const name = clone.textContent.replace(/\s+/g, ' ').trim()
+                      || a.title?.trim()
+                      || handle;
+            return { name, handle };
+          })
+          .filter(Boolean);
+      });
+
+      let added = 0;
+      for (const b of letterBrands) {
+        if (!seen.has(b.handle)) {
+          seen.add(b.handle);
+          allBrands.push(b);
+          added++;
+        }
+      }
+      console.log(`  [BikeBiz] ${letter}: ${added} new brands (total: ${allBrands.length})`);
+    }
+
+    return allBrands;
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
+export async function discoverCompetitorSubcategories(baseUrl, vendorHandle) {
+  const browser = await openBrowser();
+  try {
+    const page = await newPage(browser);
+    await page.goto(`${BASE}/brands/${vendorHandle}/`, { waitUntil: 'networkidle2', timeout: 60000 });
+    await sleep(2500);
+
+    const subcategories = await page.evaluate(() => {
+      const links = document.querySelectorAll('#carousel a.carousel-item');
+      const seen = new Set();
+      return Array.from(links).map(a => {
+        const slug = a.href.split('/').filter(Boolean).pop();
+        if (!slug || seen.has(slug)) return null;
+        seen.add(slug);
+        const label = a.querySelector('span')?.textContent.trim() || slug;
+        return { label, filterParam: slug };
+      }).filter(Boolean);
+    });
+
+    return subcategories;
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

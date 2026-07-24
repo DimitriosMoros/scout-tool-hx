@@ -312,6 +312,44 @@ export async function addProductTags(shop, token, productIds, tags) {
   return result;
 }
 
+// ── Remove tags from existing products ───────────────────────────────────────
+export async function removeProductTags(shop, token, productIds, tags) {
+  const result = { updated: 0, failed: 0, errors: [] };
+
+  for (const id of productIds) {
+    const gid = String(id).startsWith('gid://') ? id : `gid://shopify/Product/${id}`;
+    const gql = `mutation {
+      tagsRemove(id: ${JSON.stringify(gid)}, tags: ${JSON.stringify(tags)}) {
+        node { id }
+        userErrors { message }
+      }
+    }`;
+
+    try {
+      const activeToken = await getToken(shop) || token;
+      const r = await fetch(`https://${shop}/admin/api/${API_VERSION}/graphql.json`, {
+        method: 'POST',
+        headers: { 'X-Shopify-Access-Token': activeToken, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: gql }),
+      });
+      if (!r.ok) throw new Error(`Shopify GraphQL ${r.status}`);
+      const data = await r.json();
+      const errs = data?.data?.tagsRemove?.userErrors || [];
+      if (data.errors?.length) throw new Error(data.errors[0].message);
+      if (errs.length)         throw new Error(errs[0].message);
+      result.updated++;
+    } catch (e) {
+      result.failed++;
+      result.errors.push(`${id}: ${e.message}`);
+      console.error(`[Shopify] tagsRemove failed for ${id}: ${e.message}`);
+    }
+    await sleep(250);
+  }
+
+  console.log(`[Shopify] Tags removed — ${result.updated} updated, ${result.failed} failed`);
+  return result;
+}
+
 export async function createDraftProducts(shop, token, products) {
   const results = { created: [], failed: [] };
 
